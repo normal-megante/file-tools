@@ -10,9 +10,35 @@
 <link rel="stylesheet" href="css/common.css">
 <style>
 /* スマホだけに出す「カメラで撮る」 */
-.cam{display:none;margin-top:10px}
+.cam{display:none;margin-top:10px;flex-direction:column;gap:8px}
 @media (pointer:coarse){.cam{display:flex}}
 .cam .primary{display:flex;align-items:center;justify-content:center;gap:8px}
+.cam .note{margin:0}
+/* ページの中のカメラ（自動シャッター） */
+.shoot{position:fixed;inset:0;z-index:60;background:#000;color:#fff;display:flex;flex-direction:column;user-select:none;-webkit-user-select:none}
+.shoot[hidden]{display:none}
+.sh-view{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.sh-box{position:relative;flex:none}
+.sh-box video,.sh-box canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+.sh-box video{object-fit:fill;background:#000}
+.sh-box canvas{touch-action:none}
+.sh-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .3s}
+.sh-flash.on{opacity:.8;transition:none}
+.sh-top{position:absolute;top:0;left:0;right:0;padding:10px 14px 18px;background:linear-gradient(rgba(0,0,0,.6),transparent);text-align:center;pointer-events:none}
+.sh-status{font-size:15px;font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.sh-note{font-size:11.5px;opacity:.85;margin-top:3px;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.sh-bar{flex:none;display:flex;align-items:center;gap:10px;padding:14px 16px calc(14px + env(safe-area-inset-bottom));background:#000}
+.sh-side{flex:1 1 0;display:flex;gap:8px;align-items:center;min-width:0}
+.sh-side.right{justify-content:flex-end}
+.sh-btn{background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:99px;padding:9px 13px;font-size:13.5px;font-weight:600;white-space:nowrap;cursor:pointer}
+.sh-btn[aria-pressed="true"]{background:#fff;color:#111}
+.sh-shutter{flex:none;width:76px;height:76px;border-radius:50%;border:0;background:transparent;padding:0;position:relative;cursor:pointer}
+.sh-shutter::before{content:"";position:absolute;inset:0;border-radius:50%;border:4px solid #fff}
+.sh-shutter::after{content:"";position:absolute;inset:9px;border-radius:50%;background:#fff;transition:transform .1s}
+.sh-shutter:active::after{transform:scale(.9)}
+.sh-shutter:disabled{opacity:.5}
+.sh-shutter svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);pointer-events:none;z-index:1}
+.sh-last{width:46px;height:46px;border-radius:8px;border:2px solid #fff;background:#333;flex:none;object-fit:cover}
 .thumb{cursor:zoom-in}
 .card .note.bad{color:var(--warn)}
 /* 四隅を合わせる窓・仕上がりの確認 */
@@ -23,6 +49,14 @@
 .ce-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line)}
 .pv-stage canvas{display:block;max-width:100%;max-height:min(70vh,760px);background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}
 .pv-busy{position:absolute;inset:0;display:grid;place-items:center}
+.pv-tools .range{flex:1 1 270px;display:flex;align-items:center;gap:8px;margin:0}
+.pv-tools .range input{flex:1;min-width:80px}
+/* チェックボックス */
+.chk{display:flex;gap:8px;align-items:center;font-size:13.5px;margin:10px 0 0;cursor:pointer}
+.chk input{accent-color:var(--accent);width:18px;height:18px;margin:0;flex:none}
+.pv-tools .chk{margin:0}
+/* カードの注意書きの中の「撮り直す」 */
+.card .note .linkbtn{border:0;background:none;color:var(--accent);text-decoration:underline;padding:0 2px;font:inherit;cursor:pointer}
 </style>
 </head>
 <body>
@@ -42,7 +76,9 @@
         <input type="file" id="file" accept="image/*,.jpg,.jpeg,.jfif,.png,.webp,.gif,.bmp,.avif" multiple hidden>
       </div>
       <div class="cam">
-        <button type="button" class="primary" id="camBtn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg>カメラで撮る</button>
+        <button type="button" class="primary" id="shootBtn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg>カメラで撮る（自動シャッター）</button>
+        <button type="button" class="btn" id="camBtn">スマホのカメラアプリで撮る</button>
+        <p class="note" id="camNote">書類が枠に入って、スマホが止まり、ピントが合うと自動で撮ります（ぶれにくい）。続けて何枚でも撮れます。暗い所や細かい字は、スマホのカメラアプリのほうがきれいに撮れることもあります。</p>
         <input type="file" id="cam" accept="image/*" capture="environment" hidden>
       </div>
 
@@ -61,7 +97,8 @@
           <li>紙の下に、紙と色の違うもの（暗い色の机など）を敷くと、書類のふちを自動で見つけやすくなります。</li>
           <li>真上から撮ろうとすると画面の向きが変わりやすいので、少しだけ手前に傾けて撮ると防げます（斜めは自動で直ります）。</li>
           <li>照明は横か前から。少し離れて 2倍ズームで撮ると、自分やスマホの影とゆがみが減ります。フラッシュはテカリやすいのでオフがおすすめ。</li>
-          <li>鉛筆のうすい字や濃い影が残るときは、「線の濃さ」を上げてみてください。</li>
+          <li>えんぴつのうすい字がまだ読みにくいときは、写真をタップして大きく見ながら「線の濃さ」を上げてみてください。</li>
+          <li>ぼやけた写真は少し直せますが、大きくぶれた写真は元に戻せません。ピントが合ってから撮ると、いちばんくっきりします。</li>
         </ul>
       </div>
     </section>
@@ -80,6 +117,10 @@
 
         <h2>線の濃さ</h2>
         <div class="range"><span class="small muted">うすめ</span><input type="range" name="strength" id="strength" min="0" max="100" step="5" value="50"><span class="small muted">こいめ</span></div>
+        <label class="chk"><input type="checkbox" name="auto" checked>うすい字を自動で濃く</label>
+        <p class="note">字の形を見分けて、うすい字ほど濃くします（ノートの罫線は濃くしません）。写真や図が多い書類は、オフのほうが自然なことがあります。</p>
+        <label class="chk"><input type="checkbox" name="thick">細い線を太く</label>
+        <p class="note">シャープペンなどの細い字が読みやすくなります。</p>
 
         <h2>紙の形</h2>
         <select name="paper">
@@ -143,6 +184,32 @@
   </div>
 </div>
 
+<!-- ページの中のカメラ（自動シャッター） -->
+<div class="shoot" id="shoot" hidden role="dialog" aria-modal="true" aria-label="カメラで撮る">
+  <div class="sh-view" id="shView">
+    <div class="sh-box" id="shBox">
+      <video id="shVideo" playsinline muted></video>
+      <canvas id="shOverlay" width="1" height="1"></canvas>
+      <div class="sh-flash" id="shFlash"></div>
+    </div>
+    <div class="sh-top">
+      <div class="sh-status" id="shStatus">カメラを準備しています…</div>
+      <div class="sh-note" id="shNote">止めて持つと自動で撮ります。画面をタップすると、そこにピントを合わせます（できる機種のみ）。</div>
+    </div>
+  </div>
+  <div class="sh-bar">
+    <div class="sh-side">
+      <button type="button" class="sh-btn" id="shDone">完了</button>
+      <canvas class="sh-last" id="shLast" width="46" height="46" hidden></canvas>
+    </div>
+    <button type="button" class="sh-shutter" id="shShutter" aria-label="撮る"><svg viewBox="0 0 76 76" aria-hidden="true"><circle id="shRing" cx="38" cy="38" r="36" fill="none" stroke="#2f6fed" stroke-width="5" stroke-dasharray="226.2" stroke-dashoffset="226.2" stroke-linecap="round"/></svg></button>
+    <div class="sh-side right">
+      <button type="button" class="sh-btn" id="shTorch" aria-pressed="false" hidden>ライト</button>
+      <button type="button" class="sh-btn" id="shAuto" aria-pressed="true">自動</button>
+    </div>
+  </div>
+</div>
+
 <!-- 仕上がりの確認 -->
 <div class="modal" id="preview" hidden role="dialog" aria-modal="true" aria-labelledby="pvTitle">
   <div class="modal-box">
@@ -150,6 +217,10 @@
     <div class="ce-stage pv-stage" style="position:relative">
       <canvas id="pvCanvas" width="1" height="1"></canvas>
       <div class="pv-busy" id="pvBusy" hidden><div class="spin"></div></div>
+    </div>
+    <div class="ce-tools pv-tools" id="pvTools">
+      <div class="range"><span class="small">線の濃さ</span><span class="small muted">うすめ</span><input type="range" id="pvStrength" min="0" max="100" step="5" value="50" aria-label="線の濃さ"><span class="small muted">こいめ</span></div>
+      <label class="chk"><input type="checkbox" id="pvThick">細い線を太く</label>
     </div>
     <div class="modal-foot">
       <button type="button" class="btn" data-pv="prev">‹ 前</button>
@@ -165,11 +236,14 @@
 <script src="js/common.js"></script>
 <script src="js/pdf.js"></script>
 <script src="js/scan.js"></script>
+<script src="js/scancam.js"></script>
 <script>
 'use strict';
 const state = { busy: false, outputs: [], pdfUrl: null, outName: '' };
 const QUALITY = { std: { max: 2500, q: 0.82 }, high: { max: 3500, q: 0.9 }, small: { max: 1700, q: 0.72 } };
 const WHOLE = [[0, 0], [1, 0], [1, 1], [0, 1]]; // 写真全体（四隅は 0〜1 の割合で持つ）
+// ページの中のカメラ（自動シャッター）が使えるか（スマホ・タブレットで、カメラの機能があるとき）
+const CAN_SHOOT = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && matchMedia('(pointer:coarse)').matches;
 const isWhole = q => q.every((p, i) => Math.abs(p[0] - WHOLE[i][0]) < 1e-6 && Math.abs(p[1] - WHOLE[i][1]) < 1e-6);
 ICON.quad = SVG('<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="5" cy="5" r="1.2" fill="currentColor"/><circle cx="19" cy="19" r="1.2" fill="currentColor"/>');
 ACTION_LABEL.quad = '四隅を合わせる';
@@ -197,7 +271,9 @@ function renderScan(source, sw, sh, it, o, maxLong) {
   c.width = c.height = 0;
   const qq = q.map(([x, y]) => [(x - x0) * cw / bw, (y - y0) * ch / bh]);
   const out = Scan.warpQuad(data, qq, ow, oh, isWhole(it.quad) ? 0 : 0.003);
-  Scan.enhance(out, o.mode, o.strength);
+  // 写真のぼやけ（元の写真の画素で測ったもの）を、できあがりの大きさに直して渡す（少し直す）
+  const blur = (it.blur || 0) * (sw / it.w) * k;
+  Scan.enhance(out, o.mode, o.strength, { auto: o.auto, thicken: o.thicken, blur });
   const res = newCanvas(ow, oh);
   res.getContext('2d').putImageData(new ImageData(out.data, ow, oh), 0, 0);
   return rotateCanvas(res, it.rot);
@@ -211,6 +287,32 @@ function rotateCanvas(c, rot) {
 }
 const decodeFull = it => createImageBitmap(it.file, { imageOrientation: 'from-image' });
 
+/* ---------- ぼやけの確認 ---------- */
+// 書類の中の 9 か所を元の大きさのまま切り出して、字のふちの幅からぼやけを測る（Scan.measureBlur）
+function measurePhotoBlur(src, quad) {
+  const W = src.width, H = src.height, T = Math.max(32, Math.min(192, Math.round(Math.min(W, H) / 6)));
+  if (W < T || H < T) return { blur: 0, ok: false };
+  const c = newCanvas(T, T), x = c.getContext('2d', { willReadFrequently: true });
+  const P = quad.map(([u, v]) => [u * W, v * H]), lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const tiles = [];
+  for (const v of [0.2, 0.5, 0.8]) for (const u of [0.2, 0.5, 0.8]) {
+    const p = lerp(lerp(P[0], P[1], u), lerp(P[3], P[2], u), v);
+    const sx = Math.min(W - T, Math.max(0, Math.round(p[0] - T / 2))), sy = Math.min(H - T, Math.max(0, Math.round(p[1] - T / 2)));
+    x.drawImage(src, sx, sy, T, T, 0, 0, T, T);
+    tiles.push(x.getImageData(0, 0, T, T));
+  }
+  c.width = c.height = 0;
+  return Scan.measureBlur(tiles);
+}
+// ぼやけを「ふつうの画質（長い辺 2500）で仕上げたとき」の大きさに直す。これが BLUR_WARN 以上なら注意を出す
+const BLUR_WARN = 1.6;
+function blurAtStd(it) {
+  if (!it.blur) return 0;
+  const q = it.quad.map(([u, v]) => [u * it.w, v * it.h]);
+  const [ow, oh] = Scan.outputSize(q, Scan.paperAspect(q, it.w, it.h));
+  return it.blur * Math.min(1, QUALITY.std.max / Math.max(ow, oh));
+}
+
 /* ---------- 写真の一覧 ---------- */
 // 読み込んだら書類のふちを自動で探し、カードには補正後の姿を出す
 class ScanList extends ImageList {
@@ -220,7 +322,6 @@ class ScanList extends ImageList {
       it.w = bmp.width; it.h = bmp.height;
       const s = Math.min(1, 900 / Math.max(it.w, it.h));
       it.mid = downscale(bmp, Math.max(1, Math.round(it.w * s)), Math.max(1, Math.round(it.h * s))); // カード・検出用の小さい版
-      bmp.close();
       it.thumb = it.mid;
       const ds = Math.min(1, 480 / Math.max(it.w, it.h));
       const det = downscale(it.mid, Math.max(1, Math.round(it.w * ds)), Math.max(1, Math.round(it.h * ds)));
@@ -229,6 +330,8 @@ class ScanList extends ImageList {
       it.autoQuad = r.quad.map(([x, y]) => [x / det.width, y / det.height]);
       it.quad = it.autoQuad.map(p => [...p]);
       det.width = det.height = 0;
+      try { const b = measurePhotoBlur(bmp, it.quad); it.blur = b.ok ? b.blur : 0; } catch (e) { it.blur = 0; }
+      bmp.close();
       it.status = 'ok';
       it.el.querySelector('.sub').textContent = `${it.w}×${it.h} ・ ${fmtSize(it.size)}`;
       this.noteFound(it);
@@ -243,10 +346,33 @@ class ScanList extends ImageList {
     this.refresh();
   }
   noteFound(it) {
-    const n = it.el.querySelector('.note'), bad = !it.edited && !it.found;
-    n.textContent = it.edited ? '四隅を手で合わせました' : bad ? '書類のふちが見つかりません（写真全体を使います）' : '';
-    n.hidden = !n.textContent;
-    n.classList.toggle('bad', bad);
+    const n = it.el.querySelector('.note'), noEdge = !it.edited && !it.found, blurry = blurAtStd(it) >= BLUR_WARN;
+    n.textContent = '';
+    const line = t => { if (n.childNodes.length) n.appendChild(document.createElement('br')); n.appendChild(document.createTextNode(t)); };
+    if (it.edited) line('四隅を手で合わせました');
+    else if (noEdge) line('書類のふちが見つかりません（写真全体を使います）');
+    if (blurry) {
+      line('ぼやけています（ピンぼけか手ぶれ）。少し直して仕上げますが、撮り直すとくっきりします。');
+      if (CAN_SHOOT) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'linkbtn'; b.dataset.act = 'retake'; b.textContent = '撮り直す';
+        n.appendChild(b);
+      }
+    }
+    n.hidden = !n.childNodes.length;
+    n.classList.toggle('bad', noEdge || blurry);
+  }
+  // 撮り直した写真を、同じ場所に入れ替える
+  replace(old, file) {
+    const i = this.items.indexOf(old);
+    if (i < 0) return this.add([file]);
+    const it = { id: ++this.seq, file, name: file.name, size: file.size, rot: 0, flip: false, crop: null, status: 'loading' };
+    this.items.splice(i, 1, it);
+    this.grid.insertBefore(this.makeCard(it), old.el);
+    old.el.remove();
+    if (old.mid) old.mid.width = old.mid.height = 0;
+    this.refresh();
+    return this.load(it);
   }
   drawThumb(it) {
     if (!it.mid) return;
@@ -258,7 +384,7 @@ class ScanList extends ImageList {
 }
 const list = new ScanList($('#grid'), {
   actions: ['rotl', 'rotr', 'quad', 'del'],
-  onChange: refresh, onAction: (it, act) => { if (act === 'quad') openCorner(it); },
+  onChange: refresh, onAction: (it, act) => { if (act === 'quad') openCorner(it); else if (act === 'retake') openShooter(it); },
 });
 setupFileInput({
   drop: $('#drop'), input: $('#file'),
@@ -267,6 +393,17 @@ setupFileInput({
 });
 $('#camBtn').addEventListener('click', () => { if (!state.busy) $('#cam').click(); });
 $('#cam').addEventListener('change', () => { list.add([...$('#cam').files]); $('#cam').value = ''; });
+// ページの中のカメラ（自動シャッター）。replaceIt を渡すと「撮り直し」：1枚撮ったら、その写真と入れ替える
+function openShooter(replaceIt) {
+  if (state.busy) return;
+  if (!CAN_SHOOT) { $('#cam').click(); return; }
+  ScanCam.open({
+    single: !!replaceIt,
+    onShot: file => (replaceIt && list.items.includes(replaceIt) ? list.replace(replaceIt, file) : list.add([file])),
+  });
+}
+$('#shootBtn').addEventListener('click', () => openShooter());
+if (!CAN_SHOOT) { $('#shootBtn').hidden = true; $('#camNote').hidden = true; $('#camBtn').className = 'primary'; $('#camBtn').textContent = 'カメラで撮る'; }
 $('#sortName').addEventListener('click', () => list.sortByName());
 $('#clear').addEventListener('click', () => list.clear());
 $('#grid').addEventListener('click', e => {
@@ -296,9 +433,12 @@ const MODE_NOTE = {
   none: 'まっすぐにするだけ（色や明るさはそのまま）。写真や図に。',
 };
 function updateSettingsUi() {
-  const f = form.elements, pdf = f.format.value === 'pdf';
+  const f = form.elements, pdf = f.format.value === 'pdf', none = f.mode.value === 'none';
   $('#modeNote').textContent = MODE_NOTE[f.mode.value];
-  f.strength.disabled = f.mode.value === 'none';
+  f.strength.disabled = f.auto.disabled = f.thick.disabled = none;
+  // 大きく見る画面のつまみも、設定と同じにしておく
+  $('#pvStrength').value = f.strength.value; $('#pvThick').checked = f.thick.checked;
+  $('#pvStrength').disabled = $('#pvThick').disabled = none;
   $('#formatNote').textContent = pdf ? '全部のページを1つの PDF にまとめます。' : `${f.mode.value === 'bw' ? 'PNG' : 'JPEG'} で保存します（白黒は PNG、それ以外は JPEG）。`;
   $('#saveBox').hidden = pdf;
   $('#ext').textContent = pdf ? '.pdf' : f.save.value === 'zip' ? '.zip' : '.' + (f.mode.value === 'bw' ? 'png' : 'jpg');
@@ -309,7 +449,7 @@ function saveSettings() {
     const d = {};
     for (const el of form.elements) {
       if (!el.name) continue;
-      if (el.type === 'radio') { if (el.checked) d[el.name] = el.value; } else d[el.name] = el.value;
+      if (el.type === 'radio') { if (el.checked) d[el.name] = el.value; } else if (el.type === 'checkbox') d[el.name] = el.checked; else d[el.name] = el.value;
     }
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(d));
   } catch (e) { /* 保存できなくても動作には影響なし */ }
@@ -319,6 +459,7 @@ function loadSettings() {
     const d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
     for (const [k, v] of Object.entries(d)) {
       const el = form.elements[k]; if (!el) continue;
+      if (el.type === 'checkbox') { if (typeof v === 'boolean') el.checked = v; continue; }
       const valid = el instanceof RadioNodeList ? [...el].some(r => r.value === v)
         : el.tagName === 'SELECT' ? [...el.options].some(o => o.value === v) : true;
       if (valid) el.value = v;
@@ -327,9 +468,10 @@ function loadSettings() {
 }
 function getOpts() {
   const f = form.elements;
-  return { mode: f.mode.value, strength: +f.strength.value / 100, paper: f.paper.value, format: f.format.value,
-    save: f.save.value, ...QUALITY[f.quality.value] };
+  return { mode: f.mode.value, strength: +f.strength.value / 100, auto: f.auto.checked, thicken: f.thick.checked,
+    paper: f.paper.value, format: f.format.value, save: f.save.value, ...QUALITY[f.quality.value] };
 }
+const lookOf = o => [o.mode, o.strength, o.auto, o.thicken, o.paper].join(); // 見た目にかかわる設定
 // 仕上がりの設定が変わったら、カードの絵を描き直す（少し待ってまとめて）
 let thumbTimer = 0, thumbGen = 0;
 function redrawThumbs() {
@@ -346,8 +488,8 @@ function redrawThumbs() {
 let lastLook = '';
 function onSettings() {
   updateSettingsUi(); saveSettings();
-  const o = getOpts(), look = [o.mode, o.strength, o.paper].join();
-  if (look !== lastLook) { lastLook = look; redrawThumbs(); }
+  const look = lookOf(getOpts());
+  if (look !== lastLook) { lastLook = look; redrawThumbs(); if (pv.it && !pv.orig) schedulePreview(); }
 }
 form.addEventListener('input', onSettings);
 form.addEventListener('change', onSettings);
@@ -545,6 +687,7 @@ async function renderPreview() {
   $('#pvName').textContent = it.name;
   $('[data-pv=prev]').disabled = i <= 0; $('[data-pv=next]').disabled = i >= items.length - 1;
   $('[data-pv=orig]').textContent = pv.orig ? '仕上がりを見る' : '元の写真と比べる';
+  $('#pvTools').hidden = pv.orig;
   $('#pvBusy').hidden = false;
   await wait(30);
   try {
@@ -566,6 +709,12 @@ async function renderPreview() {
     if (gen === pv.gen) $('#pvBusy').hidden = true;
   }
 }
+// 設定が変わったら、少し待ってから描き直す（つまみを動かしている間に何度も計算しない）
+let pvTimer = 0;
+function schedulePreview() { clearTimeout(pvTimer); pvTimer = setTimeout(() => { if (pv.it) renderPreview(); }, 220); }
+// 大きく見る画面の「線の濃さ」「細い線を太く」は、設定の欄と同じものを動かす
+$('#pvStrength').addEventListener('input', () => { form.elements.strength.value = $('#pvStrength').value; onSettings(); });
+$('#pvThick').addEventListener('change', () => { form.elements.thick.checked = $('#pvThick').checked; onSettings(); });
 $('#preview').addEventListener('click', e => {
   const b = e.target.closest('[data-pv]'); if (!b) return;
   const act = b.dataset.pv, items = list.ok, i = items.indexOf(pv.it);
@@ -583,7 +732,7 @@ document.addEventListener('keydown', e => {
 
 loadSettings();
 updateSettingsUi();
-lastLook = (o => [o.mode, o.strength, o.paper].join())(getOpts());
+lastLook = lookOf(getOpts());
 $('#fname').placeholder = defaultName();
 refresh();
 </script>

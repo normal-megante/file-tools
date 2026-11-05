@@ -23,15 +23,17 @@ const Scan = (() => {
       const o = y * w;
       for (let x = 0; x < w; x++) {
         let a = 0;
-        for (let i = -r; i <= r; i++) a += src[o + clamp(x + i, 0, w - 1)] * k[i + r];
+        if (x >= r && x < w - r) for (let i = -r, j = o + x - r; i <= r; i++, j++) a += src[j] * k[i + r];
+        else for (let i = -r; i <= r; i++) a += src[o + clamp(x + i, 0, w - 1)] * k[i + r];
         tmp[o + x] = a;
       }
     }
+    // 縦方向は、1行ずつまとめて足す（メモリを順に読む）
     for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        let a = 0;
-        for (let i = -r; i <= r; i++) a += tmp[clamp(y + i, 0, h - 1) * w + x] * k[i + r];
-        out[y * w + x] = a;
+      const o = y * w;
+      for (let i = -r; i <= r; i++) {
+        const src2 = clamp(y + i, 0, h - 1) * w, kk = k[i + r];
+        for (let x = 0; x < w; x++) out[o + x] += tmp[src2 + x] * kk;
       }
     }
     return out;
@@ -403,6 +405,55 @@ const Scan = (() => {
       }
     }
   }
+  // カラー版：R・G・B をまとめて紙の色で割る（紙が真っ白に）。紙の部分は明るさで選び、3色とも同じ画素で測る。d を書き換える
+  function normalizeColor(d, W, H) {
+    const cell = Math.max(4, Math.round(Math.max(W, H) / 120));
+    const gw = Math.ceil(W / cell), gh = Math.ceil(H / cell), G = gw * gh, N = W * H;
+    const colCell = new Int32Array(W);
+    for (let x = 0; x < W; x++) colCell[x] = (x / cell) | 0;
+    const lum = new Float32Array(N), sum = new Float64Array(G), cnt = new Float64Array(G);
+    for (let y = 0, i = 0; y < H; y++) {
+      const row = ((y / cell) | 0) * gw;
+      for (let x = 0; x < W; x++, i++) {
+        const j = i * 4, L = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2];
+        lum[i] = L; sum[row + colCell[x]] += L; cnt[row + colCell[x]]++;
+      }
+    }
+    const mean = new Float32Array(G);
+    for (let g = 0; g < G; g++) mean[g] = sum[g] / cnt[g];
+    const sR = new Float64Array(G), sG = new Float64Array(G), sB = new Float64Array(G);
+    cnt.fill(0);
+    for (let y = 0, i = 0; y < H; y++) {
+      const row = ((y / cell) | 0) * gw;
+      for (let x = 0; x < W; x++, i++) {
+        const g = row + colCell[x]; if (lum[i] < mean[g]) continue;
+        const j = i * 4; sR[g] += d[j]; sG[g] += d[j + 1]; sB[g] += d[j + 2]; cnt[g]++;
+      }
+    }
+    const grid = s => {
+      let bg = new Float32Array(G);
+      for (let g = 0; g < G; g++) bg[g] = cnt[g] ? s[g] / cnt[g] : mean[g];
+      bg = rankFilter(rankFilter(bg, gw, gh, 2, true), gw, gh, 2, false);
+      bg = gaussBlur(bg, gw, gh, 1);
+      for (let g = 0; g < G; g++) bg[g] = 255 / Math.max(bg[g], 24); // 割り算の代わりに掛ける数
+      return bg;
+    };
+    const gR = grid(sR), gG = grid(sG), gB = grid(sB);
+    const x0 = new Int32Array(W), x1 = new Int32Array(W), wx = new Float32Array(W);
+    for (let x = 0; x < W; x++) {
+      const fx = clamp((x + 0.5) / cell - 0.5, 0, gw - 1), i = Math.max(0, Math.min(gw - 2, fx | 0));
+      x0[x] = i; x1[x] = Math.min(gw - 1, i + 1); wx[x] = gw > 1 ? fx - i : 0;
+    }
+    for (let y = 0; y < H; y++) {
+      const fy = clamp((y + 0.5) / cell - 0.5, 0, gh - 1), j0 = Math.max(0, Math.min(gh - 2, fy | 0));
+      const r0 = j0 * gw, r1 = Math.min(gh - 1, j0 + 1) * gw, wy = gh > 1 ? fy - j0 : 0;
+      for (let x = 0, j = y * W * 4; x < W; x++, j += 4) {
+        const a = x0[x], b = x1[x], u = wx[x];
+        const f = (gr) => (gr[r0 + a] * (1 - u) + gr[r0 + b] * u) * (1 - wy) + (gr[r1 + a] * (1 - u) + gr[r1 + b] * u) * wy;
+        d[j] *= f(gR); d[j + 1] *= f(gG); d[j + 2] *= f(gB);
+      }
+    }
+  }
   // アンシャープマスク（輪郭を強調）。ぼかした画像との差を足す
   function sharpen(plane, W, H, r, amount) {
     const n = 2 * r + 1, tmp = new Float32Array(W * H);
@@ -426,9 +477,150 @@ const Scan = (() => {
       }
     }
   }
+  /* ---------- 最大・最小フィルタ（太らせる・細らせる） ---------- */
+  // 1 本の線（長さ n）の、半径 r の最大値。van Herk / Gil-Werman 法で、r が大きくても速い
+  function lineMax(P, n, r, g, h, out) {
+    const k = 2 * r + 1, m = n + 2 * r; // P は前後に r 個ずつ -Infinity を足した長さ m
+    for (let s = 0; s < m; s += k) {
+      const e = Math.min(m, s + k);
+      g[s] = P[s];
+      for (let j = s + 1; j < e; j++) g[j] = P[j] > g[j - 1] ? P[j] : g[j - 1];
+      h[e - 1] = P[e - 1];
+      for (let j = e - 2; j >= s; j--) h[j] = P[j] > h[j + 1] ? P[j] : h[j + 1];
+    }
+    for (let i = 0; i < n; i++) { const a = h[i], b = g[i + k - 1]; out[i] = a > b ? a : b; }
+  }
+  // 縦横を入れ替える（縦方向の処理も、メモリを順に読める横方向の処理でできるように）
+  function transpose(src, W, H) {
+    const out = new Float32Array(W * H), B = 32;
+    for (let y0 = 0; y0 < H; y0 += B) for (let x0 = 0; x0 < W; x0 += B) {
+      const y1 = Math.min(H, y0 + B), x1 = Math.min(W, x0 + B);
+      for (let y = y0; y < y1; y++) for (let x = x0, i = y * W + x0; x < x1; x++, i++) out[x * H + y] = src[i];
+    }
+    return out;
+  }
+  // 横（horiz）か縦の一方向だけの最大値フィルタ（isMax=false で最小値）。半径 r
+  function morph1(src, W, H, r, isMax, horiz) {
+    if (!horiz) return transpose(morph1(transpose(src, W, H), H, W, r, isMax, true), H, W);
+    const sg = isMax ? 1 : -1, L = W + 2 * r, P = new Float32Array(L), g = new Float32Array(L), h = new Float32Array(L);
+    const o = new Float32Array(W), out = new Float32Array(W * H);
+    P.fill(-Infinity);
+    for (let y = 0, b = 0; y < H; y++, b += W) {
+      if (isMax) P.set(src.subarray(b, b + W), r);
+      else for (let x = 0; x < W; x++) P[x + r] = -src[b + x];
+      lineMax(P, W, r, g, h, o);
+      if (isMax) out.set(o, b);
+      else for (let x = 0; x < W; x++) out[b + x] = -o[x];
+    }
+    return out;
+  }
+  // 2×2 の最大値で半分の大きさにする（細い線を消さずに縮める）
+  function maxHalf(src, W, H) {
+    const w = W >> 1, h = H >> 1, out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = 2 * y * W + 2 * x, a = Math.max(src[i], src[i + 1]), b = Math.max(src[i + W], src[i + W + 1]);
+      out[y * w + x] = a > b ? a : b;
+    }
+    return out;
+  }
+  // 画像全体の最大値フィルタ（isMax=false で最小値）。窓は (2r+1)×(2r+1) の正方形
+  const morph = (src, W, H, r, isMax) => morph1(morph1(src, W, H, r, isMax, true), W, H, r, isMax, false);
+
+  /* ---------- 粗いマス目の値を、画素ごとになめらかに広げる（双線形補間） ---------- */
+  function upsampleGrid(grid, gw, gh, cell, W, H) {
+    const out = new Float32Array(W * H);
+    const x0 = new Int32Array(W), x1 = new Int32Array(W), wx = new Float32Array(W);
+    for (let x = 0; x < W; x++) {
+      const fx = clamp((x + 0.5) / cell - 0.5, 0, gw - 1), i = Math.max(0, Math.min(gw - 2, fx | 0));
+      x0[x] = i; x1[x] = Math.min(gw - 1, i + 1); wx[x] = gw > 1 ? fx - i : 0;
+    }
+    for (let y = 0; y < H; y++) {
+      const fy = clamp((y + 0.5) / cell - 0.5, 0, gh - 1), j = Math.max(0, Math.min(gh - 2, fy | 0));
+      const j1 = Math.min(gh - 1, j + 1), wy = gh > 1 ? fy - j : 0, r0 = j * gw, r1 = j1 * gw, o = y * W;
+      for (let x = 0; x < W; x++) {
+        const top = grid[r0 + x0[x]] * (1 - wx[x]) + grid[r0 + x1[x]] * wx[x];
+        const bot = grid[r1 + x0[x]] * (1 - wx[x]) + grid[r1 + x1[x]] * wx[x];
+        out[o + x] = top * (1 - wy) + bot * wy;
+      }
+    }
+    return out;
+  }
+
+  // 値の分布から p（0〜1）の位置の値を返す（間引いて並べ替える）
+  function quantiles(a, ps) {
+    const step = Math.max(1, Math.floor(a.length / 150000)), n = Math.floor(a.length / step), s = new Float32Array(n);
+    for (let i = 0; i < n; i++) s[i] = a[i * step];
+    s.sort();
+    return ps.map(p => s[Math.min(n - 1, Math.max(0, Math.round(p * (n - 1))))]);
+  }
+
+  /* ---------- 字を見分けて濃くする（「うすい字を自動で濃く」） ---------- */
+  // v: 紙の明るさでそろえた明るさ（紙≒1）。字を見分けて、濃さを決めた「暗さ」（0=白〜1=黒）を返す。
+  //  ① 細かい背景（字より太いものはそのまま）を「明るいほうへ広げて戻す」で求め、そこからの差＝細い線の暗さ
+  //     （蛍光ペンの帯や大きな影・色の面は線ではないので、ここでは 0 になる）
+  //  ② 紙の部分のざらつきの大きさを測り、それより確かに暗い所だけを字とみなす
+  //  ③ 場所ごとの字の濃さを測って、うすい所ほど強く濃くする（濃い所と同じくらいの濃さにそろえる）
+  function inkDarkness(v, W, H, s, scale, blurOut) {
+    const N = W * H;
+    const vs = gaussBlur(v, W, H, Math.max(0.5, 0.8 * scale));
+    const R = Math.max(2, Math.round(8 * scale + 2 * blurOut));
+    // 細い暗い線を、まわりの明るさで埋めたもの（なめらかなので、半分の大きさで求めて広げる。速さのため）
+    let bg;
+    const w2 = W >> 1, h2 = H >> 1;
+    if (w2 >= 16 && h2 >= 16) {
+      const half = new Float32Array(w2 * h2);
+      for (let y = 0; y < h2; y++) for (let x = 0; x < w2; x++) {
+        const i = 2 * y * W + 2 * x;
+        half[y * w2 + x] = (vs[i] + vs[i + 1] + vs[i + W] + vs[i + W + 1]) * 0.25;
+      }
+      const R2 = Math.max(1, Math.round(R / 2));
+      bg = upsampleGrid(morph(morph(half, w2, h2, R2, true), w2, h2, R2, false), w2, h2, 2, W, H);
+    } else bg = morph(morph(vs, W, H, R, true), W, H, R, false);
+    const D = new Float32Array(N), Ds = new Float32Array(N);
+    for (let i = 0; i < N; i++) { const b = bg[i]; D[i] = b - v[i]; Ds[i] = b - vs[i]; }
+    // ② 紙のざらつき（ほとんどの画素は紙なので、真ん中あたりの散らばりで測る）
+    const [q50, q25, q75] = quantiles(Ds, [0.5, 0.25, 0.75]);
+    const sigma = Math.max(0.004, (q75 - q25) / 1.349), base = q50;
+    const k = 3.2 - 1.8 * s, lo = base + k * sigma, hi = lo + 2 * sigma + 0.01;
+    const mask = new Float32Array(N);
+    for (let i = 0; i < N; i++) { const t = (Ds[i] - lo) / (hi - lo); mask[i] = t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t); }
+    // ③ 場所ごとの字の濃さ（字の画素の 70% の位置）。マスごとのヒストグラムで求める
+    const cell = Math.max(16, Math.round(Math.max(W, H) / 10)), gw = Math.ceil(W / cell), gh = Math.ceil(H / cell), G = gw * gh;
+    const NB = 64, BW = 0.8 / NB, hist = new Int32Array((G + 1) * NB), cnt = new Int32Array(G + 1);
+    for (let y = 0; y < H; y++) {
+      const row = ((y / cell) | 0) * gw, o = y * W;
+      for (let x = 0; x < W; x++) {
+        const i = o + x; if (mask[i] < 0.5) continue;
+        const g = row + ((x / cell) | 0), b = Math.min(NB - 1, Math.max(0, ((Ds[i] - base) / BW) | 0));
+        hist[g * NB + b]++; cnt[g]++; hist[G * NB + b]++; cnt[G]++;
+      }
+    }
+    const pctOf = (g, p) => { const want = cnt[g] * p; let a = 0; for (let b = 0; b < NB; b++) { a += hist[g * NB + b]; if (a >= want) return (b + 0.5) * BW; } return 0.8; };
+    const minRange = 0.14 - 0.1 * s, glob = cnt[G] ? Math.max(minRange, pctOf(G, 0.7)) : 0.3;
+    const minCnt = Math.max(30, cell * cell * 0.004);
+    let lvl = new Float32Array(G);
+    for (let g = 0; g < G; g++) lvl[g] = Math.max(minRange, glob * 0.35, cnt[g] >= minCnt ? pctOf(g, 0.7) : glob);
+    lvl = gaussBlur(lvl, gw, gh, 0.8);
+    const L = upsampleGrid(lvl, gw, gh, cell, W, H);
+    // 濃さ：字の濃さ L のところで Tgt（ほぼ黒）、うすい所ほど持ち上げる（p<1 のカーブ）
+    const p = 0.9 - 0.5 * s, Tgt = 0.8 + 0.18 * s, out = bg; // bg の入れ物を使い回す
+    for (let i = 0; i < N; i++) {
+      const m = mask[i];
+      if (m <= 0) { out[i] = 0; continue; }
+      const t = (D[i] - base) / L[i];
+      out[i] = t <= 0 ? 0 : m * (t >= 1 ? Tgt + (1 - Tgt) * Math.min(1, t - 1) : Tgt * Math.pow(t, p));
+    }
+    return out;
+  }
+
   // mode: 'color' | 'gray' | 'bw' | 'none'、strength: 0〜1（線の濃さ）。img を書き換えて返す
-  function enhance(img, mode, strength = 0.5) {
+  //   opts.auto    … うすい字を自動で濃く（字を見分けて、うすい所ほど濃くする）
+  //   opts.thicken … 細い線を太く
+  //   opts.blur    … 写真のぼやけ（この大きさの画像での、ぼかしの広がり［画素］）。少し直す
+  function enhance(img, mode, strength = 0.5, opts = {}) {
     if (mode === 'none') return img;
+    const { auto = true, thicken = false, blur = 0 } = opts;
+    if (auto) return enhanceInk(img, mode, clamp(strength, 0, 1), thicken, blur);
     const W = img.width, H = img.height, N = W * H, d = img.data, s = clamp(strength, 0, 1);
     const plane = new Float32Array(N), sharpR = Math.max(1, Math.round(Math.max(W, H) / 1600));
     // 明るさ（紙=1.0）→ 0〜255 の対応表
@@ -466,7 +658,120 @@ const Scan = (() => {
     return img;
   }
 
-  return { detectDocument, orderQuad, quadArea, paperAspect, outputSize, warpQuad, enhance };
+  // 「うすい字を自動で濃く」のときの仕上げ
+  function enhanceInk(img, mode, s, thicken, blur) {
+    const W = img.width, H = img.height, N = W * H, d = img.data, scale = Math.max(W, H) / 2500;
+    const v = new Float32Array(N);
+    if (mode === 'color') {
+      normalizeColor(d, W, H); // 影と色かぶりが消えて、紙が真っ白に
+      for (let i = 0, j = 0; i < N; i++, j += 4) v[i] = (0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2]) / 255;
+    } else {
+      for (let i = 0, j = 0; i < N; i++, j += 4) v[i] = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2];
+      normalizeByBackground(v, W, H);
+    }
+    const nat = Float32Array.from(v); // 手を加える前の明るさ（元の濃さ）
+    // ぼやけた写真は、ぼやけの大きさに合わせて輪郭を強める（少しのピンぼけなら読みやすくなる）
+    if (blur >= 0.7) sharpen(v, W, H, Math.max(1, Math.round(1.2 * blur)), Math.min(1.6, 0.55 * blur));
+    sharpen(v, W, H, Math.max(1, Math.round(1.5 * scale)), 0.3 + 0.4 * s);
+    const dark = inkDarkness(v, W, H, s, scale, blur);
+    // ノートの罫線のような「紙の端まで続く長いまっすぐな線」は字ではないので、濃くしすぎない（元の濃さに近いまま）。
+    // 横線は横方向に、縦線は縦方向に、ページ幅の 1/12 より短いものを消す（細らせてから太らせる）と残る。半分の大きさで調べる
+    const w2 = W >> 1, h2 = H >> 1;
+    let line = null;
+    if (w2 >= 8 && h2 >= 8) {
+      const half = maxHalf(dark, W, H), rh = Math.max(2, Math.round(w2 / 24)), rv = Math.max(2, Math.round(h2 / 24));
+      // 少し傾いていても途切れないよう、線の太さ方向に 1 画素広げてから調べる
+      const oh = morph1(morph1(morph1(half, w2, h2, 1, true, false), w2, h2, rh, false, true), w2, h2, rh, true, true);
+      const ov = morph1(morph1(morph1(half, w2, h2, 1, true, true), w2, h2, rv, false, false), w2, h2, rv, true, false);
+      for (let i = 0; i < oh.length; i++) if (ov[i] > oh[i]) oh[i] = ov[i];
+      line = oh;
+    }
+    for (let y = 0; y < H; y++) {
+      const lr = Math.min(y >> 1, h2 - 1) * w2;
+      for (let x = 0, i = y * W; x < W; x++, i++) {
+        let k = dark[i];
+        if (line) {
+          const ln = line[lr + Math.min(x >> 1, w2 - 1)], ex = k - (1 - nat[i]);
+          if (ln > 0.02 && ex > 0) k -= ex * Math.min(1, ln / Math.max(k, 1e-3)) * 0.85;
+        }
+        // 太くて濃いもの（太いマーカー・塗りつぶし）は線として見分けられないことがあるので、元の濃さでも黒くする
+        const c = (0.85 - v[i]) / 0.55;
+        if (c > k) k = c > 1 ? 1 : c;
+        dark[i] = k;
+      }
+    }
+    if (thicken) {
+      // 細い線を太く：まわり 1 画素ぶん（大きな画像ではそれに合わせて）濃いほうへ広げる
+      const r = Math.max(1, Math.round(1.1 * scale)), a = Math.min(1, 1.4 * scale) * 0.6;
+      const md = morph(dark, W, H, r, true);
+      for (let i = 0; i < N; i++) dark[i] += a * (md[i] - dark[i]);
+    }
+    if (mode === 'bw') {
+      for (let i = 0, j = 0; i < N; i++, j += 4) d[j] = d[j + 1] = d[j + 2] = clamp((0.5 - dark[i]) / 0.08 + 0.5, 0, 1) * 255;
+    } else if (mode === 'gray') {
+      for (let i = 0, j = 0; i < N; i++, j += 4) d[j] = d[j + 1] = d[j + 2] = (1 - dark[i]) * 255;
+    } else {
+      // 明るさは決めた濃さに。色み（明るさとの差）は少し強めて足し戻す（濃くした字は、色も同じくらい強める）
+      for (let i = 0, j = 0; i < N; i++, j += 4) {
+        const r = d[j], g = d[j + 1], b = d[j + 2], L = 0.299 * r + 0.587 * g + 0.114 * b, D0 = 1 - L / 255, k = dark[i];
+        const sat = 1.3 * (k > D0 ? Math.min(2.2, k / Math.max(D0, 0.04)) : 1), Lp = (1 - k) * 255;
+        d[j] = Lp + (r - L) * sat; d[j + 1] = Lp + (g - L) * sat; d[j + 2] = Lp + (b - L) * sat;
+      }
+    }
+    return img;
+  }
+
+  /* ---------- ぼやけの大きさを測る ---------- */
+  // はっきりした明暗の境目（字のふちなど）が、何画素かけて変わるかを数える（境目の幅）。
+  // ピントが合っていれば狭く、ピンぼけや手ぶれで広がる。横向き・縦向きの境目を別々に数える。
+  function edgeWidths(img, acc) {
+    const W = img.width, H = img.height, d = img.data, N = W * H;
+    if (W < 24 || H < 24) return acc;
+    let g = new Float32Array(N);
+    for (let i = 0, j = 0; i < N; i++, j += 4) g[i] = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2];
+    g = gaussBlur(g, W, H, 0.8); // ざらつきで境目が途切れないように、ほんの少しぼかす
+    const [lo, hi] = quantiles(g, [0.02, 0.98]), R = hi - lo;
+    if (R < 24) return acc; // 明暗の差がない（白紙など）
+    const T = 0.05 * R, Cmin = 0.35 * R, eps = 0.003 * R;
+    const run = (len, lines, step, lineStep, list) => {
+      for (let l = 2; l < lines - 2; l += 2) {
+        const o = l * lineStep;
+        for (let k = 2; k < len - 2; k++) {
+          const i = o + k * step, gr = g[i + step] - g[i - step], a = Math.abs(gr);
+          if (a < T || a < Math.abs(g[i] - g[i - 2 * step]) || a <= Math.abs(g[i + 2 * step] - g[i])) continue;
+          const sg = gr > 0 ? 1 : -1;
+          let p = k, q = k;
+          while (p > 0 && sg * (g[o + p * step] - g[o + (p - 1) * step]) > eps) p--;
+          while (q < len - 1 && sg * (g[o + (q + 1) * step] - g[o + q * step]) > eps) q++;
+          if (sg * (g[o + q * step] - g[o + p * step]) >= Cmin) list.push(q - p);
+          k = q; // 同じ境目を二度数えない
+        }
+      }
+    };
+    run(W, H, 1, W, acc.h); // 横に並ぶ画素（縦の線のふち）
+    run(H, W, W, 1, acc.v); // 縦に並ぶ画素（横の線のふち）
+    return acc;
+  }
+  // tiles: 写真のいくつかの場所を切り出したもの（元の大きさのまま）。
+  // 返す blur は「ガウスぼかしに直したときの広がり（画素）」のめやす。0 ならくっきり。
+  function measureBlur(tiles) {
+    const acc = { h: [], v: [] };
+    for (const t of tiles) edgeWidths(t, acc);
+    // 真ん中半分の平均（整数の幅の中央値だと、細かい違いが出ない）
+    const med = a => {
+      if (a.length < 12) return null;
+      const s = Float32Array.from(a).sort(), lo = s.length >> 2, hi = s.length - lo;
+      let t = 0; for (let i = lo; i < hi; i++) t += s[i];
+      return t / (hi - lo);
+    };
+    const mh = med(acc.h), mv = med(acc.v), n = acc.h.length + acc.v.length;
+    if (mh === null && mv === null) return { blur: 0, width: 0, n, ok: false };
+    const width = Math.max(mh || 0, mv || 0);
+    return { blur: Math.max(0, (width - EDGE_SHARP) / EDGE_PER_SIGMA), width, n, ok: true };
+  }
+  const EDGE_SHARP = 4.3, EDGE_PER_SIGMA = 2.4; // 境目の幅 ≒ EDGE_SHARP + EDGE_PER_SIGMA × ぼかしの広がり（合成写真のテストで決めた）
+
+  return { detectDocument, orderQuad, quadArea, paperAspect, outputSize, warpQuad, enhance, measureBlur };
 })();
 
 if (typeof module !== 'undefined') module.exports = Scan;
