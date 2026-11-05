@@ -10,7 +10,7 @@
 // ※ ツールのファイルを新しく足したら、下の PRECACHE にも書き足してください。
 // =========================================================
 
-const CACHE = 'file-tools-v1';   // しまっておく入れ物の名前
+const CACHE = 'file-tools-v2';   // しまっておく入れ物の名前
 const NETWORK_TIMEOUT = 4000;    // ネットの返事をこれだけ（ミリ秒）待ち、来なければしまってある分を使う
 
 // 最初にまとめてしまっておくファイル
@@ -20,10 +20,13 @@ const PRECACHE = [
   'image-to-pdf.html',
   'image.html',
   'qr.html',
+  'scan.html',
   'manifest.webmanifest',
   'css/common.css',
   'js/common.js',
   'js/qrcode.js',
+  'js/pdf.js',
+  'js/scan.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-maskable-192.png',

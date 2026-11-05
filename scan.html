@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>スキャン補正｜ファイルツール箱</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/common.css">
+<style>
+/* スマホだけに出す「カメラで撮る」 */
+.cam{display:none;margin-top:10px}
+@media (pointer:coarse){.cam{display:flex}}
+.cam .primary{display:flex;align-items:center;justify-content:center;gap:8px}
+.thumb{cursor:zoom-in}
+.card .note.bad{color:var(--warn)}
+/* 四隅を合わせる窓・仕上がりの確認 */
+.ce-stage{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;padding:14px;background:var(--thumb-bg);overflow:hidden}
+.ce-wrap{position:relative;line-height:0}
+.ce-wrap canvas.main{display:block;max-width:100%;max-height:min(66vh,720px);touch-action:none}
+.loupe{position:absolute;width:120px;height:120px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.45);pointer-events:none;background:#000}
+.ce-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line)}
+.pv-stage canvas{display:block;max-width:100%;max-height:min(70vh,760px);background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.pv-busy{position:absolute;inset:0;display:grid;place-items:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="layout">
+    <section>
+      <header>
+        <a class="back" href="./">← ツール箱にもどる</a>
+        <h1>スキャン補正</h1>
+        <p>書類やノートの写真を、まっすぐに直して影を消し、文字をくっきりさせます。処理はこの端末の中だけで行われます。</p>
+      </header>
+
+      <div id="drop" class="drop" tabindex="0" role="button" aria-label="写真を追加">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div class="big" id="dropTitle"></div>
+        <div class="muted"><span class="pc-only">またはクリックして選択　（フォルダごと・Ctrl+V の貼り付けもOK）</span><span class="touch-only">撮ってある写真から選べます</span></div>
+        <input type="file" id="file" accept="image/*,.jpg,.jpeg,.jfif,.png,.webp,.gif,.bmp,.avif" multiple hidden>
+      </div>
+      <div class="cam">
+        <button type="button" class="primary" id="camBtn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg>カメラで撮る</button>
+        <input type="file" id="cam" accept="image/*" capture="environment" hidden>
+      </div>
+
+      <div class="listbar" id="listbar" hidden>
+        <span id="count"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="sortName">名前順に並べる</button>
+        <button type="button" class="btn danger" id="clear">すべて削除</button>
+      </div>
+      <p class="hint" id="hint" hidden>写真をタップすると大きく確認できます。書類のふちがずれていたら、四隅のボタンで手で合わせられます。<span class="pc-only">カードをドラッグすると順番を入れ替えられます。</span></p>
+      <div id="grid" class="grid"></div>
+
+      <div class="tips">
+        <b>きれいに撮るコツ</b>
+        <ul>
+          <li>紙の下に、紙と色の違うもの（暗い色の机など）を敷くと、書類のふちを自動で見つけやすくなります。</li>
+          <li>真上から撮ろうとすると画面の向きが変わりやすいので、少しだけ手前に傾けて撮ると防げます（斜めは自動で直ります）。</li>
+          <li>照明は横か前から。少し離れて 2倍ズームで撮ると、自分やスマホの影とゆがみが減ります。フラッシュはテカリやすいのでオフがおすすめ。</li>
+          <li>鉛筆のうすい字や濃い影が残るときは、「線の濃さ」を上げてみてください。</li>
+        </ul>
+      </div>
+    </section>
+
+    <aside>
+      <form id="settings" class="panel" onsubmit="return false">
+       <div class="panel-body">
+        <h2>仕上がり</h2>
+        <div class="seg">
+          <label><input type="radio" name="mode" value="color" checked>カラー</label>
+          <label><input type="radio" name="mode" value="gray">グレー</label>
+          <label><input type="radio" name="mode" value="bw">白黒</label>
+          <label><input type="radio" name="mode" value="none">補正なし</label>
+        </div>
+        <p class="note" id="modeNote"></p>
+
+        <h2>線の濃さ</h2>
+        <div class="range"><span class="small muted">うすめ</span><input type="range" name="strength" id="strength" min="0" max="100" step="5" value="50"><span class="small muted">こいめ</span></div>
+
+        <h2>紙の形</h2>
+        <select name="paper">
+          <option value="auto" selected>自動（写真から計算）</option>
+          <option value="a">A4・B5 など（ぴったりの比率にする）</option>
+        </select>
+
+        <h2>保存する形式</h2>
+        <div class="seg">
+          <label><input type="radio" name="format" value="pdf" checked>PDF</label>
+          <label><input type="radio" name="format" value="image">画像</label>
+        </div>
+        <p class="note" id="formatNote"></p>
+        <div id="saveBox" hidden>
+          <h2>保存のしかた</h2>
+          <div class="seg">
+            <label><input type="radio" name="save" value="each">1枚ずつ</label>
+            <label><input type="radio" name="save" value="zip">ZIPにまとめる</label>
+          </div>
+        </div>
+
+        <h2>画質</h2>
+        <select name="quality">
+          <option value="std" selected>標準（画面で読むなら十分）</option>
+          <option value="high">高画質（印刷向け・大きめ）</option>
+          <option value="small">小さめ（メールやアップロード向け）</option>
+        </select>
+
+        <h2>ファイル名</h2>
+        <div class="fn"><input type="text" id="fname" autocomplete="off" spellcheck="false"><span id="ext">.pdf</span></div>
+       </div>
+       <div class="panel-foot">
+        <button type="button" id="make" class="primary" disabled>PDFを保存</button>
+        <div id="progress" class="progress" hidden><div class="bar"><i id="pbar"></i></div><div id="ptext" class="ptext"></div></div>
+        <div id="result" class="result" hidden></div>
+       </div>
+      </form>
+    </aside>
+  </div>
+</div>
+
+<!-- 四隅を合わせる窓 -->
+<div class="modal" id="corner" hidden role="dialog" aria-modal="true" aria-labelledby="ceTitle">
+  <div class="modal-box">
+    <div class="modal-head"><b id="ceTitle">四隅を合わせる</b><span class="spacer"></span><span class="small muted" id="ceName"></span></div>
+    <div class="ce-stage">
+      <div class="ce-wrap" id="ceWrap">
+        <canvas class="main" id="ceCanvas" width="1" height="1"></canvas>
+        <canvas class="loupe" id="ceLoupe" width="240" height="240" hidden></canvas>
+      </div>
+    </div>
+    <div class="ce-tools">
+      <span class="small muted" style="flex:1 1 220px">青い○をドラッグして、書類の角に合わせてください。</span>
+      <button type="button" class="btn" data-ce="auto">自動で合わせる</button>
+      <button type="button" class="btn" data-ce="whole">写真全体</button>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-ce="cancel">キャンセル</button>
+      <button type="button" class="primary" data-ce="ok">決定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 仕上がりの確認 -->
+<div class="modal" id="preview" hidden role="dialog" aria-modal="true" aria-labelledby="pvTitle">
+  <div class="modal-box">
+    <div class="modal-head"><b id="pvTitle">仕上がりの確認</b><span class="spacer"></span><span class="small muted" id="pvName"></span></div>
+    <div class="ce-stage pv-stage" style="position:relative">
+      <canvas id="pvCanvas" width="1" height="1"></canvas>
+      <div class="pv-busy" id="pvBusy" hidden><div class="spin"></div></div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-pv="prev">‹ 前</button>
+      <button type="button" class="btn" data-pv="next">次 ›</button>
+      <button type="button" class="btn" data-pv="orig">元の写真と比べる</button>
+      <button type="button" class="btn" data-pv="corner">四隅を合わせる</button>
+      <span class="spacer"></span>
+      <button type="button" class="primary" data-pv="close">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/scan.js"></script>
+<script>
+'use strict';
+const state = { busy: false, outputs: [], pdfUrl: null, outName: '' };
+const QUALITY = { std: { max: 2500, q: 0.82 }, high: { max: 3500, q: 0.9 }, small: { max: 1700, q: 0.72 } };
+const WHOLE = [[0, 0], [1, 0], [1, 1], [0, 1]]; // 写真全体（四隅は 0〜1 の割合で持つ）
+const isWhole = q => q.every((p, i) => Math.abs(p[0] - WHOLE[i][0]) < 1e-6 && Math.abs(p[1] - WHOLE[i][1]) < 1e-6);
+ICON.quad = SVG('<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="5" cy="5" r="1.2" fill="currentColor"/><circle cx="19" cy="19" r="1.2" fill="currentColor"/>');
+ACTION_LABEL.quad = '四隅を合わせる';
+
+/* ---------- 補正のしごと（共通） ---------- */
+// source（向きを直した写真。ImageBitmap か canvas、大きさ sw×sh）から、書類の部分をまっすぐにして補正した canvas を作る
+function renderScan(source, sw, sh, it, o, maxLong) {
+  const q = it.quad.map(([x, y]) => [x * sw, y * sh]);
+  let aspect = Scan.paperAspect(it.quad.map(([x, y]) => [x * it.w, y * it.h]), it.w, it.h);
+  if (o.paper === 'a') aspect = aspect >= 1 ? Math.SQRT2 : Math.SQRT1_2;
+  let [ow, oh] = Scan.outputSize(q, aspect);
+  const k = Math.min(1, maxLong / Math.max(ow, oh));
+  ow = Math.max(1, Math.round(ow * k)); oh = Math.max(1, Math.round(oh * k));
+  // 書類のまわりだけ切り出す（大きく縮めるときは、先に縮めてギザギザを防ぐ）
+  const xs = q.map(p => p[0]), ys = q.map(p => p[1]);
+  const x0 = Math.max(0, Math.floor(Math.min(...xs))), x1 = Math.min(sw, Math.ceil(Math.max(...xs)));
+  const y0 = Math.max(0, Math.floor(Math.min(...ys))), y1 = Math.min(sh, Math.ceil(Math.max(...ys)));
+  const f = Math.min(1, k * 1.3), bw = Math.max(1, x1 - x0), bh = Math.max(1, y1 - y0);
+  const cw = Math.max(2, Math.round(bw * f)), ch = Math.max(2, Math.round(bh * f));
+  const c = newCanvas(cw, ch), ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(source, x0, y0, bw, bh, 0, 0, cw, ch);
+  const data = ctx.getImageData(0, 0, cw, ch);
+  c.width = c.height = 0;
+  const qq = q.map(([x, y]) => [(x - x0) * cw / bw, (y - y0) * ch / bh]);
+  const out = Scan.warpQuad(data, qq, ow, oh, isWhole(it.quad) ? 0 : 0.003);
+  Scan.enhance(out, o.mode, o.strength);
+  const res = newCanvas(ow, oh);
+  res.getContext('2d').putImageData(new ImageData(out.data, ow, oh), 0, 0);
+  return rotateCanvas(res, it.rot);
+}
+function rotateCanvas(c, rot) {
+  if (!rot) return c;
+  const swap = rot % 180 !== 0, r = newCanvas(swap ? c.height : c.width, swap ? c.width : c.height), x = r.getContext('2d');
+  x.translate(r.width / 2, r.height / 2); x.rotate(rot * Math.PI / 180); x.drawImage(c, -c.width / 2, -c.height / 2);
+  c.width = c.height = 0;
+  return r;
+}
+const decodeFull = it => createImageBitmap(it.file, { imageOrientation: 'from-image' });
+
+/* ---------- 写真の一覧 ---------- */
+// 読み込んだら書類のふちを自動で探し、カードには補正後の姿を出す
+class ScanList extends ImageList {
+  async load(it) {
+    try {
+      const bmp = await decodeFull(it);
+      it.w = bmp.width; it.h = bmp.height;
+      const s = Math.min(1, 900 / Math.max(it.w, it.h));
+      it.mid = downscale(bmp, Math.max(1, Math.round(it.w * s)), Math.max(1, Math.round(it.h * s))); // カード・検出用の小さい版
+      bmp.close();
+      it.thumb = it.mid;
+      const ds = Math.min(1, 480 / Math.max(it.w, it.h));
+      const det = downscale(it.mid, Math.max(1, Math.round(it.w * ds)), Math.max(1, Math.round(it.h * ds)));
+      const r = Scan.detectDocument(det.getContext('2d').getImageData(0, 0, det.width, det.height));
+      it.found = r.found;
+      it.autoQuad = r.quad.map(([x, y]) => [x / det.width, y / det.height]);
+      it.quad = it.autoQuad.map(p => [...p]);
+      det.width = det.height = 0;
+      it.status = 'ok';
+      it.el.querySelector('.sub').textContent = `${it.w}×${it.h} ・ ${fmtSize(it.size)}`;
+      this.noteFound(it);
+      this.drawThumb(it);
+    } catch (e) {
+      console.error(e);
+      it.status = 'error';
+      it.el.classList.add('error');
+      it.el.querySelector('.sub').textContent = '読み込めない形式です（使われません）';
+    }
+    it.el.classList.remove('loading');
+    this.refresh();
+  }
+  noteFound(it) {
+    const n = it.el.querySelector('.note'), bad = !it.edited && !it.found;
+    n.textContent = it.edited ? '四隅を手で合わせました' : bad ? '書類のふちが見つかりません（写真全体を使います）' : '';
+    n.hidden = !n.textContent;
+    n.classList.toggle('bad', bad);
+  }
+  drawThumb(it) {
+    if (!it.mid) return;
+    const r = renderScan(it.mid, it.mid.width, it.mid.height, it, getOpts(), 360);
+    const cv = it.el.querySelector('.thumb canvas');
+    cv.width = r.width; cv.height = r.height; cv.getContext('2d').drawImage(r, 0, 0);
+    r.width = r.height = 0;
+  }
+}
+const list = new ScanList($('#grid'), {
+  actions: ['rotl', 'rotr', 'quad', 'del'],
+  onChange: refresh, onAction: (it, act) => { if (act === 'quad') openCorner(it); },
+});
+setupFileInput({
+  drop: $('#drop'), input: $('#file'),
+  onFiles: files => list.add(files),
+  isBusy: () => state.busy, isInternalDrag: () => list.isDragging,
+});
+$('#camBtn').addEventListener('click', () => { if (!state.busy) $('#cam').click(); });
+$('#cam').addEventListener('change', () => { list.add([...$('#cam').files]); $('#cam').value = ''; });
+$('#sortName').addEventListener('click', () => list.sortByName());
+$('#clear').addEventListener('click', () => list.clear());
+$('#grid').addEventListener('click', e => {
+  const t = e.target.closest('.thumb'); if (!t || state.busy) return;
+  const it = list.items.find(i => String(i.id) === t.closest('.card').dataset.id);
+  if (it && it.status === 'ok') openPreview(it);
+});
+
+function refresh() {
+  const items = list.items, ok = list.ok, errors = list.errors;
+  $('#listbar').hidden = $('#hint').hidden = !items.length;
+  $('#drop').classList.toggle('compact', items.length > 0);
+  const touch = matchMedia('(pointer:coarse)').matches;
+  $('#dropTitle').textContent = items.length ? (touch ? 'タップして写真を追加' : '写真を追加（ドラッグ＆ドロップ / クリック）')
+    : (touch ? 'タップして写真を選ぶ' : 'ここに写真をドラッグ＆ドロップ');
+  $('#count').textContent = `${ok.length} 枚` + (list.loading ? '　読み込み中…' : '') + (errors ? `　読み込めない ${errors} 件` : '');
+  $('#make').disabled = state.busy || list.loading || !ok.length;
+}
+
+/* ---------- 設定 ---------- */
+const form = $('#settings'), SETTINGS_KEY = 'scan-settings-v1';
+form.elements.save.value = matchMedia('(pointer:coarse)').matches ? 'each' : 'zip';
+const MODE_NOTE = {
+  color: '影と色かぶりを消して、紙を白く・文字をくっきり。ペンの色は残ります。',
+  gray: '白から黒の濃淡だけで。色がいらない書類やノートに。',
+  bw: '白と黒の2色。文字だけの書類は、いちばんくっきり・小さくなります。',
+  none: 'まっすぐにするだけ（色や明るさはそのまま）。写真や図に。',
+};
+function updateSettingsUi() {
+  const f = form.elements, pdf = f.format.value === 'pdf';
+  $('#modeNote').textContent = MODE_NOTE[f.mode.value];
+  f.strength.disabled = f.mode.value === 'none';
+  $('#formatNote').textContent = pdf ? '全部のページを1つの PDF にまとめます。' : `${f.mode.value === 'bw' ? 'PNG' : 'JPEG'} で保存します（白黒は PNG、それ以外は JPEG）。`;
+  $('#saveBox').hidden = pdf;
+  $('#ext').textContent = pdf ? '.pdf' : f.save.value === 'zip' ? '.zip' : '.' + (f.mode.value === 'bw' ? 'png' : 'jpg');
+  $('#make').textContent = pdf ? 'PDFを保存' : '画像を保存';
+}
+function saveSettings() {
+  try {
+    const d = {};
+    for (const el of form.elements) {
+      if (!el.name) continue;
+      if (el.type === 'radio') { if (el.checked) d[el.name] = el.value; } else d[el.name] = el.value;
+    }
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(d));
+  } catch (e) { /* 保存できなくても動作には影響なし */ }
+}
+function loadSettings() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    for (const [k, v] of Object.entries(d)) {
+      const el = form.elements[k]; if (!el) continue;
+      const valid = el instanceof RadioNodeList ? [...el].some(r => r.value === v)
+        : el.tagName === 'SELECT' ? [...el.options].some(o => o.value === v) : true;
+      if (valid) el.value = v;
+    }
+  } catch (e) { /* 初回やブロック時は既定値のまま */ }
+}
+function getOpts() {
+  const f = form.elements;
+  return { mode: f.mode.value, strength: +f.strength.value / 100, paper: f.paper.value, format: f.format.value,
+    save: f.save.value, ...QUALITY[f.quality.value] };
+}
+// 仕上がりの設定が変わったら、カードの絵を描き直す（少し待ってまとめて）
+let thumbTimer = 0, thumbGen = 0;
+function redrawThumbs() {
+  clearTimeout(thumbTimer);
+  thumbTimer = setTimeout(async () => {
+    const gen = ++thumbGen;
+    for (const it of list.ok) {
+      if (gen !== thumbGen) return;
+      list.drawThumb(it);
+      await wait(0);
+    }
+  }, 120);
+}
+let lastLook = '';
+function onSettings() {
+  updateSettingsUi(); saveSettings();
+  const o = getOpts(), look = [o.mode, o.strength, o.paper].join();
+  if (look !== lastLook) { lastLook = look; redrawThumbs(); }
+}
+form.addEventListener('input', onSettings);
+form.addEventListener('change', onSettings);
+function defaultName() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return `スキャン_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+/* ---------- 保存 ---------- */
+function setProgress(done, total, label) {
+  $('#progress').hidden = false;
+  $('#pbar').style.width = (total ? done / total * 100 : 0) + '%';
+  $('#ptext').textContent = label;
+}
+async function encodeForPdf(canvas, o) {
+  if (o.mode === 'bw') return bitonalFromCanvas(canvas);
+  const jpg = jpegFromCanvas(canvas, o.q);
+  if (o.mode !== 'gray' || !HAS_DEFLATE) return jpg;
+  const fl = await flateFromCanvas(canvas, true); // グレーは可逆圧縮のほうが小さくてくっきりのことが多い
+  return fl.data.length < jpg.data.length ? fl : jpg;
+}
+
+$('#make').addEventListener('click', async () => {
+  const items = list.ok;
+  if (!items.length || state.busy) return;
+  const o = getOpts(), base = sanitize($('#fname').value) || defaultName();
+  state.busy = true; list.setBusy(true);
+  $('#result').hidden = true;
+  if (state.pdfUrl) { URL.revokeObjectURL(state.pdfUrl); state.pdfUrl = null; }
+  const label = i => `${i + 1} / ${items.length} 枚目を補正中…`;
+  try {
+    if (o.format === 'pdf') {
+      const blob = await buildPdf(items, { paper: 'fit', margin: 0, orient: 'auto' }, base, {
+        onPage: i => setProgress(i, items.length, label(i)),
+        encode: async it => {
+          await wait(0); // 進み具合の表示を更新させる
+          const bmp = await decodeFull(it), c = renderScan(bmp, bmp.width, bmp.height, it, o, o.max);
+          bmp.close();
+          try { return { ...(await encodeForPdf(c, o)), rot: 0 }; } finally { c.width = c.height = 0; }
+        },
+      });
+      state.outName = base + '.pdf';
+      state.outputs = [new File([blob], state.outName, { type: 'application/pdf' })];
+      state.pdfUrl = URL.createObjectURL(blob);
+    } else {
+      const outs = [], type = o.mode === 'bw' ? 'image/png' : 'image/jpeg', ext = o.mode === 'bw' ? '.png' : '.jpg';
+      for (let i = 0; i < items.length; i++) {
+        setProgress(i, items.length, label(i));
+        await wait(0);
+        const bmp = await decodeFull(items[i]), c = renderScan(bmp, bmp.width, bmp.height, items[i], o, o.max);
+        bmp.close();
+        const data = encodeCanvas(c, type, o.q);
+        c.width = c.height = 0;
+        const name = items.length > 1 ? `${base}_${String(i + 1).padStart(2, '0')}` : base;
+        outs.push(new File([data], name + ext, { type }));
+      }
+      state.outputs = outs;
+      state.outName = base;
+    }
+    setProgress(1, 1, '');
+    await saveOutputs();
+    showResult(items);
+  } catch (e) {
+    console.error(e);
+    toast('エラーが発生しました：' + (e && e.message || e));
+  } finally {
+    state.busy = false; $('#progress').hidden = true; list.setBusy(false);
+  }
+});
+
+async function saveOutputs() {
+  const outs = state.outputs;
+  if (outs.length > 1 && getOpts().save === 'zip') {
+    saveBlob(await makeZip(outs.map(f => ({ name: f.name, blob: f }))), state.outName + '.zip');
+  } else {
+    for (const f of outs) { saveBlob(f, f.name); if (outs.length > 1) await wait(250); }
+  }
+}
+function showResult(items) {
+  const outs = state.outputs, total = outs.reduce((s, f) => s + f.size, 0), pdf = !!state.pdfUrl;
+  const r = $('#result');
+  r.innerHTML = `<div class="head">✓ 保存しました</div><div class="line"></div>
+    <div class="small muted">保存先：ダウンロードフォルダ</div>
+    <div class="btns"><button type="button" class="btn" id="again">もう一度保存</button>${pdf ? '<button type="button" class="btn" id="open">開いて確認</button>' : ''}${canShareFiles(outs) ? '<button type="button" class="btn" id="share">共有</button>' : ''}</div>`;
+  r.querySelector('.line').textContent = pdf ? `${items.length} ページ ・ ${fmtSize(total)}` : `${outs.length} 枚 ・ 合計 ${fmtSize(total)}`;
+  r.querySelector('#again').addEventListener('click', saveOutputs);
+  const op = r.querySelector('#open');
+  if (op) op.addEventListener('click', () => window.open(state.pdfUrl, '_blank'));
+  const sh = r.querySelector('#share');
+  if (sh) sh.addEventListener('click', () => shareFiles(state.outputs));
+  r.hidden = false;
+}
+
+/* ---------- 四隅を合わせる窓 ---------- */
+const ce = { it: null, src: null, quad: null, drag: null };
+async function openCorner(it) {
+  closePreview();
+  const bmp = await decodeFull(it);
+  const s = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  ce.src = downscale(bmp, Math.max(1, Math.round(bmp.width * s)), Math.max(1, Math.round(bmp.height * s)));
+  bmp.close();
+  Object.assign(ce, { it, quad: it.quad.map(p => [...p]), drag: null });
+  const c = $('#ceCanvas');
+  c.width = ce.src.width; c.height = ce.src.height;
+  $('#ceName').textContent = it.name;
+  $('#corner').hidden = false;
+  drawCorner();
+}
+function closeCorner() {
+  $('#corner').hidden = true; $('#ceLoupe').hidden = true;
+  if (ce.src) ce.src.width = ce.src.height = 0;
+  ce.it = ce.src = null; ce.drag = null;
+}
+function quadPath(x, P) { x.moveTo(P[0][0], P[0][1]); for (let k = 1; k < 4; k++) x.lineTo(P[k][0], P[k][1]); x.closePath(); }
+function drawCorner() {
+  const c = $('#ceCanvas'), x = c.getContext('2d'), W = c.width, H = c.height;
+  const px = W / (c.getBoundingClientRect().width || W); // 画面の1px が canvas の何px か
+  const P = ce.quad.map(([u, v]) => [u * W, v * H]);
+  x.drawImage(ce.src, 0, 0);
+  x.fillStyle = 'rgba(0,0,0,.45)';
+  x.beginPath(); x.rect(0, 0, W, H); quadPath(x, P); x.fill('evenodd');
+  x.lineWidth = 2 * px; x.strokeStyle = '#2f6fed';
+  x.beginPath(); quadPath(x, P); x.stroke();
+  P.forEach(([X, Y], k) => {
+    x.beginPath(); x.arc(X, Y, (ce.drag && ce.drag.k === k ? 14 : 11) * px, 0, Math.PI * 2);
+    x.fillStyle = 'rgba(47,111,237,.25)'; x.fill();
+    x.lineWidth = 3 * px; x.strokeStyle = '#2f6fed'; x.stroke();
+    x.lineWidth = 1.5 * px; x.strokeStyle = '#fff'; x.stroke();
+  });
+}
+// 指で隠れて見えない角を、拡大して別の場所に見せる
+function drawLoupe(k) {
+  const L = $('#ceLoupe'), c = $('#ceCanvas'), rect = c.getBoundingClientRect(), x = L.getContext('2d');
+  const onScreen = rect.width / ce.src.width, r = 20 / onScreen, S = L.width; // 画面の3倍に拡大
+  const [u, v] = ce.quad[k], cx = u * ce.src.width, cy = v * ce.src.height, sc = S / (2 * r);
+  x.fillStyle = '#000'; x.fillRect(0, 0, S, S);
+  x.drawImage(ce.src, cx - r, cy - r, 2 * r, 2 * r, 0, 0, S, S);
+  const P = ce.quad.map(([a, b]) => [(a * ce.src.width - cx + r) * sc, (b * ce.src.height - cy + r) * sc]);
+  x.lineWidth = 2; x.strokeStyle = '#2f6fed'; x.beginPath(); quadPath(x, P); x.stroke();
+  x.strokeStyle = '#fff'; x.lineWidth = 1.5;
+  x.beginPath(); x.moveTo(S / 2 - 14, S / 2); x.lineTo(S / 2 + 14, S / 2); x.moveTo(S / 2, S / 2 - 14); x.lineTo(S / 2, S / 2 + 14); x.stroke();
+  // 角と反対側のすみに置く
+  L.style.left = u < 0.5 ? 'auto' : '8px'; L.style.right = u < 0.5 ? '8px' : 'auto';
+  L.style.top = v < 0.5 ? 'auto' : '8px'; L.style.bottom = v < 0.5 ? '8px' : 'auto';
+  L.hidden = false;
+}
+const ceCanvas = $('#ceCanvas');
+function pointerUV(e) { const r = ceCanvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, r]; }
+function nearestCorner(e) {
+  const [u, v, r] = pointerUV(e);
+  let best = -1, bd = Infinity;
+  ce.quad.forEach(([a, b], k) => { const d = Math.hypot((a - u) * r.width, (b - v) * r.height); if (d < bd) { bd = d; best = k; } });
+  return bd <= (e.pointerType === 'mouse' ? 30 : 48) ? best : -1;
+}
+ceCanvas.addEventListener('pointerdown', e => {
+  const k = nearestCorner(e); if (k < 0) return;
+  e.preventDefault();
+  const [u, v] = pointerUV(e);
+  ce.drag = { k, du: ce.quad[k][0] - u, dv: ce.quad[k][1] - v }; // つかんだ場所と角のずれを保つ（角が指の下に飛ばない）
+  ceCanvas.setPointerCapture(e.pointerId);
+  drawCorner(); drawLoupe(k);
+});
+ceCanvas.addEventListener('pointermove', e => {
+  if (!ce.drag) { if (e.pointerType === 'mouse') ceCanvas.style.cursor = nearestCorner(e) >= 0 ? 'grab' : ''; return; }
+  const [u, v] = pointerUV(e), cl = t => Math.min(1, Math.max(0, t));
+  ce.quad[ce.drag.k] = [cl(u + ce.drag.du), cl(v + ce.drag.dv)];
+  drawCorner(); drawLoupe(ce.drag.k);
+});
+const endCornerDrag = () => { if (!ce.drag) return; ce.drag = null; $('#ceLoupe').hidden = true; drawCorner(); };
+ceCanvas.addEventListener('pointerup', endCornerDrag);
+ceCanvas.addEventListener('pointercancel', endCornerDrag);
+$('#corner').addEventListener('click', e => {
+  const b = e.target.closest('[data-ce]'); if (!b) return;
+  const act = b.dataset.ce;
+  if (act === 'auto') ce.quad = ce.it.autoQuad.map(p => [...p]);
+  else if (act === 'whole') ce.quad = WHOLE.map(p => [...p]);
+  else if (act === 'cancel') return closeCorner();
+  else if (act === 'ok') {
+    const it = ce.it;
+    it.quad = Scan.orderQuad(ce.quad); // 角を入れちがえても大丈夫なように並べ直す
+    it.edited = it.quad.some((p, i) => Math.abs(p[0] - it.autoQuad[i][0]) > 1e-4 || Math.abs(p[1] - it.autoQuad[i][1]) > 1e-4);
+    list.noteFound(it); list.drawThumb(it);
+    return closeCorner();
+  }
+  drawCorner();
+});
+
+/* ---------- 仕上がりの確認 ---------- */
+const pv = { it: null, orig: false, gen: 0 };
+function openPreview(it) { Object.assign(pv, { it, orig: false }); $('#preview').hidden = false; renderPreview(); }
+function closePreview() { $('#preview').hidden = true; pv.it = null; pv.gen++; }
+async function renderPreview() {
+  const it = pv.it, items = list.ok, i = items.indexOf(it), gen = ++pv.gen;
+  $('#pvTitle').textContent = `仕上がりの確認（${i + 1} / ${items.length}）`;
+  $('#pvName').textContent = it.name;
+  $('[data-pv=prev]').disabled = i <= 0; $('[data-pv=next]').disabled = i >= items.length - 1;
+  $('[data-pv=orig]').textContent = pv.orig ? '仕上がりを見る' : '元の写真と比べる';
+  $('#pvBusy').hidden = false;
+  await wait(30);
+  try {
+    const bmp = await decodeFull(it);
+    if (gen !== pv.gen) { bmp.close(); return; }
+    let c;
+    if (pv.orig) {
+      const s = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+      c = downscale(bmp, Math.max(1, Math.round(bmp.width * s)), Math.max(1, Math.round(bmp.height * s)));
+      const x = c.getContext('2d'), P = it.quad.map(([u, v]) => [u * c.width, v * c.height]);
+      x.lineWidth = Math.max(2, c.width / 400); x.strokeStyle = '#2f6fed'; x.beginPath(); quadPath(x, P); x.stroke();
+    } else c = renderScan(bmp, bmp.width, bmp.height, it, getOpts(), 1600);
+    bmp.close();
+    if (gen !== pv.gen) return;
+    const view = $('#pvCanvas');
+    view.width = c.width; view.height = c.height; view.getContext('2d').drawImage(c, 0, 0);
+    c.width = c.height = 0;
+  } finally {
+    if (gen === pv.gen) $('#pvBusy').hidden = true;
+  }
+}
+$('#preview').addEventListener('click', e => {
+  const b = e.target.closest('[data-pv]'); if (!b) return;
+  const act = b.dataset.pv, items = list.ok, i = items.indexOf(pv.it);
+  if (act === 'close') return closePreview();
+  if (act === 'corner') return openCorner(pv.it);
+  if (act === 'orig') pv.orig = !pv.orig;
+  if (act === 'prev' && i > 0) { pv.it = items[i - 1]; pv.orig = false; }
+  if (act === 'next' && i < items.length - 1) { pv.it = items[i + 1]; pv.orig = false; }
+  renderPreview();
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!$('#corner').hidden) closeCorner(); else if (!$('#preview').hidden) closePreview();
+});
+
+loadSettings();
+updateSettingsUi();
+lastLook = (o => [o.mode, o.strength, o.paper].join())(getOpts());
+$('#fname').placeholder = defaultName();
+refresh();
+</script>
+</body>
+</html>
