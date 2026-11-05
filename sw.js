@@ -10,7 +10,7 @@
 // ※ ツールのファイルを新しく足したら、下の PRECACHE にも書き足してください。
 // =========================================================
 
-const CACHE = 'file-tools-v6';   // しまっておく入れ物の名前
+const CACHE = 'file-tools-v7';   // しまっておく入れ物の名前
 const NETWORK_TIMEOUT = 4000;    // ネットの返事をこれだけ（ミリ秒）待ち、来なければしまってある分を使う
 
 // 最初にまとめてしまっておくファイル
@@ -34,6 +34,7 @@ const PRECACHE = [
   'js/pdfview.js',
   'js/pdfshrink.js',
   'js/pdfwrite.js',
+  'js/stamp.js',
   'js/scan.js',
   // PDF の表示部品（日本語の文字表などは、使ったときにしまう）
   'vendor/pdfjs/pdf.min.mjs',

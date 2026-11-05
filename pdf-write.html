@@ -72,7 +72,7 @@ select.mini{width:auto;padding:2px 6px;font-size:13px}
 .pg > canvas{position:absolute;left:0;top:0;width:100%;height:100%}
 .layer{position:absolute;inset:0}
 .pages.m-text .layer{cursor:text}
-.pages.m-date .layer,.pages.m-check .layer,.pages.m-circle .layer,.pages.m-cross .layer{cursor:copy}
+.pages.m-date .layer,.pages.m-check .layer,.pages.m-circle .layer,.pages.m-cross .layer,.pages.m-stamp .layer{cursor:copy}
 .pages.m-white .layer,.pages.m-ink .layer{touch-action:none;cursor:crosshair}
 .pages.m-ink .item{pointer-events:none}
 .item{position:absolute;touch-action:none;cursor:move}
@@ -88,6 +88,40 @@ select.mini{width:auto;padding:2px 6px;font-size:13px}
 .item .ix::after,.item .ih::after{content:'';position:absolute;inset:-6px}
 .live{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible}
 .liverect{position:absolute;background:rgba(255,255,255,.92);outline:1px dashed #2f6fed;pointer-events:none}
+.item > img{display:block;width:100%;height:100%;pointer-events:none;-webkit-user-drag:none}
+
+/* ---- ハンコ・サイン ---- */
+.checker{background-color:#fff;background-image:conic-gradient(#e9ebef 25%,#fff 0 50%,#e9ebef 0 75%,#fff 0);background-size:14px 14px}
+.stampnow{display:flex;align-items:center;gap:8px}
+.stampnow img{height:30px;max-width:90px;object-fit:contain;border:1px solid var(--line-strong);border-radius:6px;padding:2px;cursor:pointer}
+.stamp-box{width:min(720px,100%)}
+.stabs{margin:10px 16px 0}
+.stabs label{font-size:12px;padding:6px 2px}
+.modal-body{padding:12px 16px 14px;overflow-y:auto;min-height:0;flex:1 1 auto}
+.modal-body h3{font-size:13px;color:var(--muted);margin:12px 0 6px;font-weight:600}
+.modal-body h3:first-child{margin-top:0}
+.saved{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px}
+.sv{position:relative;border:1px solid var(--line);border-radius:10px;padding:6px;background:var(--panel);cursor:pointer;display:flex;flex-direction:column;gap:4px;text-align:center}
+.sv:hover{border-color:var(--accent)}
+.sv .th{height:80px;border-radius:6px;display:grid;place-items:center;overflow:hidden}
+.sv .th img{max-width:100%;max-height:100%}
+.sv .lb{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sv .del{position:absolute;top:2px;right:2px;width:26px;height:26px}
+.empty{color:var(--muted);font-size:13px;padding:16px 0;text-align:center}
+.sealgrid{display:grid;grid-template-columns:minmax(0,200px) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:520px){.sealgrid{grid-template-columns:1fr}.sealgrid canvas{max-width:180px;margin:0 auto}}
+.sealgrid canvas{display:block;width:100%;aspect-ratio:1/1;border-radius:10px;border:1px solid var(--line)}
+.pad{position:relative;border:1px solid var(--line-strong);border-radius:10px;background:#fff;touch-action:none;aspect-ratio:3/1;cursor:crosshair}
+.pad canvas{position:absolute;inset:0;width:100%;height:100%}
+.pad .base{position:absolute;left:6%;right:6%;bottom:24%;border-top:1px dashed #b9c0cc;pointer-events:none}
+.pad .ph{position:absolute;inset:0;display:grid;place-items:center;color:#9aa1ad;font-size:14px;pointer-events:none}
+.btnrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.imgcols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:520px){.imgcols{grid-template-columns:1fr}}
+.imgcols canvas{display:block;max-width:100%;max-height:260px;margin:0 auto;border:1px solid var(--line);border-radius:8px}
+#imgSrc{touch-action:none;cursor:crosshair}
+.keep{display:flex;align-items:center;gap:6px;font-size:13px;margin-right:auto;cursor:pointer}
+.keep input{accent-color:var(--accent)}
 .editor{position:absolute;z-index:3;margin:0;border:1px dashed #2f6fed;border-radius:0;background:rgba(255,255,255,.88);resize:none;overflow:hidden;white-space:pre;line-height:1.3;min-height:0;outline:none;box-sizing:border-box;user-select:text;-webkit-user-select:text}
 </style>
 </head>
@@ -96,7 +130,7 @@ select.mini{width:auto;padding:2px 6px;font-size:13px}
   <header>
     <a class="back" href="./">← ツール箱にもどる</a>
     <h1>PDF に書き込み</h1>
-    <p>PDF に文字・チェック・日付・白塗り・手書きを書き込みます。処理はこの端末の中だけで行われます。</p>
+    <p>PDF に文字・チェック・日付・白塗り・手書き・ハンコやサインを書き込みます。処理はこの端末の中だけで行われます。</p>
   </header>
 
   <div id="drop" class="drop" tabindex="0" role="button" aria-label="PDFを開く">
@@ -157,6 +191,9 @@ select.mini{width:auto;padding:2px 6px;font-size:13px}
               <label><input type="radio" name="pen" value="thick">太い</label>
             </div>
           </div>
+          <div class="og" data-for="stamp">
+            <div class="stampnow"><img id="stampThumb" class="checker" alt="今のハンコ・サイン" hidden><button type="button" class="btn" id="stampPick">ハンコ・サインを選ぶ・作る</button></div>
+          </div>
         </form>
         <div class="ctrl">
           <div class="zoom" title="表示の大きさ">
@@ -181,8 +218,96 @@ select.mini{width:auto;padding:2px 6px;font-size:13px}
         <li>書き込んだものは、「保存」を押すまで PDF には入りません。保存すると「元の名前_書き込み.pdf」が新しくでき、元のファイルはそのまま残ります。</li>
         <li>元の文字・図・しおり・リンクはそのまま残ります（元の文字の検索やコピーも、今までどおりできます）。</li>
         <li>保存した PDF の書き込みは、あとから動かしたり消したりできません。この画面を閉じる前なら、直して保存し直せます。</li>
-        <li>ハンコ・サイン（画像を貼る・印鑑を作る）は準備中です。</li>
+        <li>ハンコ・サインは、見た目だけのものです（電子署名ではありません）。電子印鑑でよいかは、提出先に確かめてください。</li>
       </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ハンコ・サインを選ぶ・作る窓 -->
+<div class="modal" id="stampModal" hidden role="dialog" aria-modal="true" aria-labelledby="stampTitle">
+  <div class="modal-box stamp-box">
+    <div class="modal-head"><b id="stampTitle">ハンコ・サイン</b><span class="spacer"></span><button type="button" class="icon" id="stampClose" title="閉じる" aria-label="閉じる">✕</button></div>
+    <div class="seg stabs" role="tablist" id="stabs">
+      <label><input type="radio" name="stab" value="saved">保存したもの</label>
+      <label><input type="radio" name="stab" value="seal">印鑑を作る</label>
+      <label><input type="radio" name="stab" value="sign">サインを書く</label>
+      <label><input type="radio" name="stab" value="image">画像から</label>
+    </div>
+    <div class="modal-body">
+      <section data-tab="saved">
+        <div id="savedList" class="saved"></div>
+        <p class="note">ここにあるものは、この端末のこのブラウザの中だけに保存されています（ほかの端末やブラウザには出ません）。ブラウザのデータを消すと、いっしょに消えます。この端末を使える人なら誰でも使えるので、共用の PC では保存しないでください。</p>
+      </section>
+      <section data-tab="seal" hidden>
+        <div class="sealgrid">
+          <canvas id="sealPreview" class="checker" width="600" height="600"></canvas>
+          <div>
+            <h3>名字（1〜4文字）</h3>
+            <input type="text" id="sealName" maxlength="8" placeholder="例：山田" autocomplete="off" spellcheck="false">
+            <p class="note" id="sealNameNote"></p>
+            <h3>書体</h3>
+            <div class="seg" id="sealFonts"></div>
+            <p class="note" id="sealFontNote" hidden></p>
+            <h3>大きさ（直径）</h3>
+            <div class="seg">
+              <label><input type="radio" name="sealSize" value="10.5">10.5mm</label>
+              <label><input type="radio" name="sealSize" value="12">12mm</label>
+              <label><input type="radio" name="sealSize" value="15">15mm</label>
+            </div>
+            <p class="note">10.5mm は、ふだん使う認印によくある大きさです。</p>
+            <label class="keep" style="margin-top:10px"><input type="checkbox" id="sealRough">かすれをつける（本物っぽく）</label>
+          </div>
+        </div>
+        <div class="warn">⚠ 見た目だけの電子印鑑です。実印・銀行印の代わりにはなりません。電子印鑑でよいかは、提出先に確かめてください。</div>
+      </section>
+      <section data-tab="sign" hidden>
+        <div class="pad" id="signPad"><canvas></canvas><div class="base"></div><div class="ph" id="signPh">ここにサインを書く</div></div>
+        <div class="btnrow">
+          <div class="sws" role="radiogroup" aria-label="色">
+            <label class="sw" title="黒"><input type="radio" name="signColor" value="black" aria-label="黒"><i style="--c:#1a1a1a"></i></label>
+            <label class="sw" title="青"><input type="radio" name="signColor" value="blue" aria-label="青"><i style="--c:#1f4fd1"></i></label>
+          </div>
+          <div class="seg mini">
+            <label><input type="radio" name="signPen" value="thin">細い</label>
+            <label><input type="radio" name="signPen" value="mid">ふつう</label>
+            <label><input type="radio" name="signPen" value="thick">太い</label>
+          </div>
+          <span class="spacer"></span>
+          <button type="button" class="btn" id="signUndo">1つ戻す</button>
+          <button type="button" class="btn" id="signClear">書き直す</button>
+        </div>
+        <p class="note">枠の横幅が、PDF の上では約 7.5cm になります（置いたあとで大きさを変えられます）。</p>
+      </section>
+      <section data-tab="image" hidden>
+        <div class="btnrow" style="margin-top:0"><button type="button" class="btn" id="imgPick">画像を選ぶ</button><span class="small muted" id="imgName"></span></div>
+        <input type="file" id="imgFile" accept="image/*" hidden>
+        <p class="note">白い紙に押したハンコや、白い紙に書いたサインを、明るい所で真上から撮った写真がおすすめです。白い所は自動で透明になります。</p>
+        <div id="imgWork" hidden>
+          <div class="imgcols">
+            <div><h3>元の画像（使う所をドラッグで囲む）</h3><canvas id="imgSrc" width="1" height="1"></canvas></div>
+            <div><h3>できあがり</h3><canvas id="imgOut" class="checker" width="1" height="1"></canvas></div>
+          </div>
+          <p class="warn" id="imgEmpty" hidden>線が見つかりませんでした。囲む所を変えるか、「白くする強さ」を弱くしてみてください。</p>
+          <div class="btnrow"><button type="button" class="btn" id="imgAll" disabled>囲むのをやめる（全体を使う）</button></div>
+          <h3>白くする強さ</h3>
+          <div class="range"><input type="range" id="imgStrength" min="1" max="10" step="1"><output id="imgStrengthOut"></output></div>
+          <p class="note">影や紙の色が残るときは強く、線がかすれて消えるときは弱くしてください。</p>
+          <h3>色</h3>
+          <div class="seg">
+            <label><input type="radio" name="imgColor" value="orig">元の色</label>
+            <label><input type="radio" name="imgColor" value="red">朱色</label>
+            <label><input type="radio" name="imgColor" value="black">黒</label>
+            <label><input type="radio" name="imgColor" value="blue">青</label>
+          </div>
+          <p class="note">置くときの大きさは自動で決めます（短い辺が約 12mm）。置いたあとで、右下の丸で変えられます。</p>
+        </div>
+      </section>
+    </div>
+    <div class="modal-foot" id="stampFoot">
+      <label class="keep"><input type="checkbox" id="stampKeep">保存して次も使う（この端末だけ）</label>
+      <button type="button" class="btn" id="stampCancel">やめる</button>
+      <button type="button" class="primary" id="stampUse" disabled>これを使う</button>
     </div>
   </div>
 </div>
@@ -192,6 +317,7 @@ select.mini{width:auto;padding:2px 6px;font-size:13px}
 <script src="js/pdfdoc.js"></script>
 <script src="js/pdfview.js"></script>
 <script src="js/pdfwrite.js"></script>
+<script src="js/stamp.js"></script>
 <script>
 'use strict';
 // =========================================================
@@ -219,7 +345,16 @@ const state = {
   sel: null, editing: null, history: [], dirty: false, output: null, lastInk: null,
   tool: 'text', zoom: 0, hideHint: false,
   opts: { color: 'black', textSize: 'm', font: 'gothic', markSize: 'm', dateFmt: 'slash', pen: 'mid' },
+  images: new Map(), // ハンコ・サインの画像：id → { canvas, url, w, h（置くときの大きさ pt） }
+  stamp: null,       // 今押すハンコ・サインの id
+  so: { sealFont: 'kaisho', sealSize: '10.5', sealRough: false, signColor: 'black', signPen: 'mid', imgStrength: 5, imgColor: 'orig', keep: true },
 };
+const MM = 72 / 25.4; // 1mm は何 pt か
+const SEAL_SIZES = ['10.5', '12', '15'];                           // 印鑑の直径（mm）
+const SIGN_COLORS = { black: Stamp.INKS.black, blue: Stamp.INKS.blue };
+const SIGN_PENS = { thin: 0.006, mid: 0.009, thick: 0.014 };       // サインの線の太さ（枠の横幅に対する割合）
+const SIGN_MM = 75;                                                // サインの枠の横幅が、PDF の上で何 mm になるか
+const IMG_COLORS = ['orig', 'red', 'black', 'blue'];
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const rd = v => Math.round(v * 100) / 100;
 
@@ -233,6 +368,7 @@ const TOOLS = [
   ['cross', 'バツ', '<path d="M6 6l12 12M18 6 6 18"/>'],
   ['white', '白塗り', '<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>'],
   ['ink', '手書き', '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>'],
+  ['stamp', 'ハンコ', '<path d="M5 22h14"/><path d="M19.27 13.73A2.5 2.5 0 0 0 17.5 13h-11A2.5 2.5 0 0 0 4 15.5V17a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-1.5c0-.66-.26-1.3-.73-1.77Z"/><path d="M14 13V8.5C14 7 15 7 15 5a3 3 0 0 0-3-3c-1.66 0-3 1-3 3s1 2 1 3.5V13"/>'],
 ];
 // 道具ごとの説明と注意（その道具を選んだときに、すぐ下に出す）
 const TAP = TOUCH ? 'タップ' : 'クリック';
@@ -246,6 +382,8 @@ const HINTS = {
   cross: `<span>付けたい所を${TAP}（続けて置けます）。大きさと色は上で選べます。</span>`,
   white: '<span>ドラッグして四角を描くと、白く塗りつぶします。</span><div class="warn">⚠ 見た目を隠すだけで、下の文字はデータに残ります（コピー・検索で出てきます）。本当に消すなら、PDF24 の「黒塗り」か、保存後に「PDF の圧縮」の「強力」でページを画像にしてください。</div>',
   ink: `<span>なぞって書きます。近くに続けて書いた線は、ひとまとまりになります。</span>${TOUCH ? '<span class="c">※ 手書きのあいだは、2本指でスクロールします。</span>' : ''}`,
+  stamp: `<span>押したい所を${TAP}（続けて押せます）。「選ぶ・作る」で、印鑑を作る・サインを書く・画像から取り込むができます。</span>`
+    + '<span class="c">※ 見た目だけのハンコ・サインです（電子署名ではありません）。電子印鑑でよいかは、提出先に確かめてください。</span>',
 };
 $('#tools').innerHTML = TOOLS.map(([id, label, d]) =>
   `<button type="button" class="tool" data-tool="${id}" aria-pressed="false">${SVG(d, 20)}<span>${label}</span></button>`).join('');
@@ -259,11 +397,12 @@ function setTool(t) {
   for (const b of $('#tools').children) b.setAttribute('aria-pressed', String(b.dataset.tool === t));
   $('#hint').innerHTML = HINTS[t];
   modeClass(); updateOpts();
+  if (t === 'stamp' && !state.stamp) openStampModal();
 }
 function modeClass() { pagesEl.className = `pages m-${state.tool}${state.busy ? ' busy' : ''}`; }
 
 /* ---------- 色・大きさなどの設定 ---------- */
-const kindOf = it => (it.type === 'text' ? 'text' : MARKS.has(it.type) ? 'mark' : it.type);
+const kindOf = it => (it.type === 'text' ? 'text' : MARKS.has(it.type) ? 'mark' : it.type === 'image' ? 'stamp' : it.type);
 const toolKind = t => (t === 'text' || t === 'date' ? 'text' : MARKS.has(t) ? 'mark' : t);
 const keyOf = (obj, v) => Object.keys(obj).find(k => obj[k] === v) || '';
 function setRadio(name, v) { for (const r of optForm.querySelectorAll(`input[name="${name}"]`)) r.checked = r.value === v; }
@@ -318,11 +457,11 @@ optForm.addEventListener('change', e => {
   }
   updateOpts();
 });
-const appliesTo = (n, it) => (n === 'color' ? it.type !== 'white' : n === 'textSize' || n === 'font' ? it.type === 'text'
+const appliesTo = (n, it) => (n === 'color' ? it.type !== 'white' && it.type !== 'image' : n === 'textSize' || n === 'font' ? it.type === 'text'
   : n === 'markSize' ? MARKS.has(it.type) : n === 'pen' ? it.type === 'ink' : false);
 
 function saveSettings() {
-  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...state.opts, hideHint: state.hideHint })); }
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...state.opts, hideHint: state.hideHint, stamp: state.so })); }
   catch (e) { /* 保存できなくても動作には影響なし */ }
 }
 function loadSettings() {
@@ -335,6 +474,15 @@ function loadSettings() {
     if (DATE_FMTS.includes(d.dateFmt)) o.dateFmt = d.dateFmt;
     if (d.pen in PENS) o.pen = d.pen;
     state.hideHint = d.hideHint === true;
+    const s = d.stamp || {}, so = state.so;
+    if (s.sealFont in Stamp.SEAL_FONTS) so.sealFont = s.sealFont;
+    if (SEAL_SIZES.includes(s.sealSize)) so.sealSize = s.sealSize;
+    if (typeof s.sealRough === 'boolean') so.sealRough = s.sealRough;
+    if (s.signColor in SIGN_COLORS) so.signColor = s.signColor;
+    if (s.signPen in SIGN_PENS) so.signPen = s.signPen;
+    if (Number.isInteger(s.imgStrength) && s.imgStrength >= 1 && s.imgStrength <= 10) so.imgStrength = s.imgStrength;
+    if (IMG_COLORS.includes(s.imgColor)) so.imgColor = s.imgColor;
+    if (typeof s.keep === 'boolean') so.keep = s.keep;
   } catch (e) { /* 初回やブロック時は既定値のまま */ }
 }
 $('#hintBtn').addEventListener('click', () => { state.hideHint = !state.hideHint; showHintState(); saveSettings(); });
@@ -518,9 +666,10 @@ function elOf(it) {
   if (el) return el;
   el = document.createElement('div');
   el.className = 'item t-' + it.type;
-  el.innerHTML = (it.type === 'text' ? '<canvas></canvas>'
+  el.innerHTML = (it.type === 'text' ? '<canvas></canvas>' : it.type === 'image' ? '<img alt="" draggable="false">'
     : it.type === 'white' ? '' : '<svg preserveAspectRatio="none"><path fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>')
     + '<button type="button" class="ix" title="消す" aria-label="消す">×</button><span class="ih" title="大きさを変える"></span>';
+  if (it.type === 'image') { const im = state.images.get(it.img); if (im) el.firstChild.src = im.url; }
   el._it = it;
   els.set(it, el);
   state.pages[it.page].layer.appendChild(el);
@@ -541,7 +690,7 @@ function drawItem(it) {
     const c = el.firstChild, s = pg.k * DPR;
     c.width = Math.max(1, Math.ceil(it.w * s)); c.height = Math.max(1, Math.ceil(it.h * s));
     PdfWrite.drawText(c.getContext('2d'), it, s);
-  } else if (it.type !== 'white') {
+  } else if (it.type !== 'white' && it.type !== 'image') {
     const { cmds, lw } = PdfWrite.shape(it), svg = el.firstChild, p = svg.firstChild;
     svg.setAttribute('viewBox', `0 0 ${it.w} ${it.h}`);
     p.setAttribute('d', PdfWrite.svgPath(cmds));
@@ -614,6 +763,13 @@ function place(pg, x, y) {
     else { const before = JSON.stringify(state.items); state.items.push(it); drawItem(it); openEditor(it, before); }
   } else if (MARKS.has(t)) {
     const s = MARK_SIZES[o.markSize], it = { type: t, page: pg.i, x: x - s / 2, y: y - s / 2, w: s, h: s, color: o.color };
+    clampItem(it); remember(); state.items.push(it); drawItem(it); select(it);
+  } else if (t === 'stamp') {
+    const im = state.images.get(state.stamp);
+    if (!im) { openStampModal(); return; }
+    // タップした所がまん中になるように。ページより大きければページに収まるまで縮める
+    const f = Math.min(1, pg.W / im.w, pg.H / im.h), w = rd(im.w * f), h = rd(im.h * f);
+    const it = { type: 'image', page: pg.i, x: rd(x - w / 2), y: rd(y - h / 2), w, h, img: state.stamp };
     clampItem(it); remember(); state.items.push(it); drawItem(it); select(it);
   }
 }
@@ -800,10 +956,13 @@ function moveBy(it, o, dx, dy) {
 // 右下の丸を (dx, dy) だけ動かしたとき
 function resizeBy(it, o, dx, dy) {
   const pg = state.pages[it.page];
-  if (it.type === 'text' || it.type === 'ink') { // 縦横の比は変えない（対角線の向きに動いた分だけ大きく）
+  if (it.type === 'text' || it.type === 'ink' || it.type === 'image') { // 縦横の比は変えない（対角線の向きに動いた分だけ大きく）
     const f = Math.max(0.1, 1 + (dx * o.w + dy * o.h) / (o.w * o.w + o.h * o.h));
     if (it.type === 'text') it.size = clamp(Math.round(o.size * f * 2) / 2, 4, 144);
-    else {
+    else if (it.type === 'image') {
+      const ff = clamp(f, 4 / Math.min(o.w, o.h), Math.max(1, Math.min(pg.W / o.w, pg.H / o.h))); // 小さくても 4pt、大きくてもページまで
+      it.w = rd(o.w * ff); it.h = rd(o.h * ff);
+    } else {
       const ff = Math.max(f, 2 / Math.max(o.w, o.h));
       it.strokes = o.strokes.map(s => s.map((v, i) => rd(i % 2 ? o.y + (v - o.y) * ff : o.x + (v - o.x) * ff)));
       inkBox(it);
@@ -832,6 +991,7 @@ function addStroke(pg, pts) {
 
 /* ---------- キーボード ---------- */
 document.addEventListener('keydown', e => {
+  if (!modal.hidden) { if (e.key === 'Escape') { e.preventDefault(); closeStampModal(); } return; } // 窓を開いているあいだは、ほかの操作をしない
   if (!state.file || state.editing || state.busy) return;
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
@@ -866,7 +1026,9 @@ async function save() {
   setProgress(0, 1, '保存しています…');
   await wait(30);
   try {
+    const images = new Map([...state.images].map(([id, im]) => [id, im.canvas]));
     const blob = await PdfWrite.build(state.file.doc, state.pages, items, {
+      images,
       onProgress: (d, t) => setProgress(d, t + 1, `保存しています…（${d + 1} / ${t}）`),
     });
     const name = (sanitize(stem(state.file.name)) || 'PDF') + '_書き込み.pdf';
@@ -928,7 +1090,336 @@ function showDocNotes() {
   if (f.encrypted) add('⚠ この PDF には保護（パスワード・印刷禁止など）がかかっています。保存した PDF では、保護は外れます。');
   if (f.form) add('※ この PDF には入力欄（フォーム）があります。入力欄と重なる所に書くと、入力欄に隠れて見えないことがあります。');
 }
+/* ---------- ハンコ・サイン（選ぶ・作る窓） ---------- */
+// 作った画像は state.images に入れて、置いたもの（type: 'image'）からは id で指す。
+// 「保存して次も使う」なら、この端末のこのブラウザの中（StampStore）にもしまう。id は保存したものなら 's' + 番号
+const modal = $('#stampModal'), so = state.so;
+const KIND_LABEL = { seal: '印鑑', sign: 'サイン', image: '画像' };
+let stab = 'seal', newId = 0, storeOk = true, thumbUrls = [], fontsReady = false;
+
+function addImage(id, canvas, wmm, hmm) {
+  if (!state.images.has(id)) state.images.set(id, { canvas, url: canvas.toDataURL('image/png'), w: rd(wmm * MM), h: rd(hmm * MM) });
+}
+function setStamp(id) {
+  const im = state.images.get(id), th = $('#stampThumb');
+  state.stamp = im ? id : null;
+  th.hidden = !im;
+  if (im) th.src = im.url;
+  $('#stampPick').textContent = im ? '選ぶ・作る' : 'ハンコ・サインを選ぶ・作る';
+}
+function useStamp(id, canvas, wmm, hmm) {
+  addImage(id, canvas, wmm, hmm);
+  setStamp(id);
+  closeStampModal();
+  if (state.tool !== 'stamp') setTool('stamp');
+  toast(`押したい所を${TAP}してください`);
+}
+
+async function openStampModal() {
+  if (!modal.hidden || state.busy) return;
+  closeEditor();
+  setupSealFonts();
+  modal.hidden = false;
+  const n = await refreshSaved();
+  showTab(n > 0 ? 'saved' : 'seal');
+}
+function closeStampModal() {
+  modal.hidden = true;
+  if (sign.cur) sign.cur = null;
+}
+$('#stampPick').addEventListener('click', openStampModal);
+$('#stampThumb').addEventListener('click', openStampModal);
+$('#stampClose').addEventListener('click', closeStampModal);
+$('#stampCancel').addEventListener('click', closeStampModal);
+// 窓の外（暗い所）を押したら閉じる（中で書き始めて外で離したときは閉じない）
+let downOnBack = false;
+modal.addEventListener('pointerdown', e => { downOnBack = e.target === modal; });
+modal.addEventListener('click', e => { if (e.target === modal && downOnBack) closeStampModal(); });
+
+function showTab(t) {
+  stab = t;
+  for (const r of modal.querySelectorAll('input[name="stab"]')) r.checked = r.value === t;
+  for (const s of modal.querySelectorAll('section[data-tab]')) s.hidden = s.dataset.tab !== t;
+  $('#stampKeep').closest('label').hidden = t === 'saved' || !storeOk;
+  $('#stampUse').hidden = t === 'saved';
+  if (t === 'seal') drawSeal();
+  else if (t === 'sign') sizePad();
+  updateUse();
+}
+function setModalRadios() {
+  const set = (name, v) => { for (const r of modal.querySelectorAll(`input[name="${name}"]`)) r.checked = r.value === String(v); };
+  set('sealFont', so.sealFont); set('sealSize', so.sealSize); set('signColor', so.signColor); set('signPen', so.signPen); set('imgColor', so.imgColor);
+  $('#sealRough').checked = so.sealRough;
+  $('#stampKeep').checked = so.keep;
+  $('#imgStrength').value = so.imgStrength; $('#imgStrengthOut').textContent = so.imgStrength;
+}
+modal.addEventListener('change', e => {
+  const t = e.target, n = t.name || t.id;
+  if (n === 'stab') return showTab(t.value);
+  if (n === 'sealFont' || n === 'sealSize') { so[n] = t.value; drawSeal(); }
+  else if (n === 'sealRough') { so.sealRough = t.checked; drawSeal(); }
+  else if (n === 'signColor' || n === 'signPen') { so[n] = t.value; drawPad(); }
+  else if (n === 'imgColor') { so.imgColor = t.value; runImage(true); }
+  else if (n === 'stampKeep') so.keep = t.checked;
+  else return;
+  saveSettings();
+});
+function ready() {
+  return stab === 'seal' ? !!sealName() : stab === 'sign' ? sign.strokes.length > 0 : stab === 'image' ? !!img.out : false;
+}
+function updateUse() { $('#stampUse').disabled = !ready(); }
+
+// 今のタブで作ったもの：{ kind, label, canvas, w, h（mm） }
+function candidate() {
+  if (stab === 'seal') {
+    const name = sealName(), mm = +so.sealSize;
+    return name ? { kind: 'seal', label: name, canvas: Stamp.seal({ name, font: so.sealFont, rough: so.sealRough }), w: mm, h: mm } : null;
+  }
+  if (stab === 'sign') {
+    if (!sign.strokes.length) return null;
+    const S = 1500, lw = SIGN_PENS[so.signPen] * S; // 枠の横幅を 1500 画素にして描く
+    const c = Stamp.strokesToCanvas(sign.strokes.map(s => s.map(v => v * S)), { width: S, height: S / 3, color: SIGN_COLORS[so.signColor], lw });
+    const t = Stamp.trim(c, Math.ceil(lw));
+    c.width = c.height = 0;
+    return t ? { kind: 'sign', label: 'サイン', canvas: t, w: t.width / S * SIGN_MM, h: t.height / S * SIGN_MM } : null;
+  }
+  if (stab === 'image' && img.out) {
+    // 正方形に近ければ長い辺を 12mm、細長ければ短い辺を 12mm（長い辺は 60mm まで）
+    const W = img.out.width, H = img.out.height, r = W / H;
+    const s = Math.min(r >= 0.75 && r <= 4 / 3 ? 12 / Math.max(W, H) : 12 / Math.min(W, H), 60 / Math.max(W, H));
+    return { kind: 'image', label: img.name || '画像', canvas: img.out, w: W * s, h: H * s };
+  }
+  return null;
+}
+$('#stampUse').addEventListener('click', async () => {
+  const c = candidate(), btn = $('#stampUse');
+  if (!c) return;
+  btn.disabled = true;
+  let id = null;
+  if (so.keep && storeOk) {
+    try {
+      const sid = await StampStore.add({ kind: c.kind, label: c.label, png: Stamp.toPng(c.canvas), w: rd(c.w), h: rd(c.h), created: Date.now() });
+      id = 's' + sid;
+      // ブラウザが空き容量を作るために勝手に消さないよう頼む（断られても動作は同じ）
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    } catch (e) {
+      console.warn(e);
+      toast('この端末には保存できませんでした（今回だけ使います）');
+    }
+  }
+  useStamp(id || 'n' + ++newId, c.canvas, c.w, c.h);
+  updateUse();
+});
+
+/* 保存したもの */
+async function refreshSaved() {
+  const box = $('#savedList');
+  for (const u of thumbUrls) URL.revokeObjectURL(u);
+  thumbUrls = [];
+  let list;
+  try { list = await StampStore.list(); storeOk = true; }
+  catch (e) {
+    console.warn(e); storeOk = false;
+    box.innerHTML = '<div class="empty">このブラウザでは、保存が使えません（プライベートモードなど）。</div>';
+    return 0;
+  }
+  list.sort((a, b) => b.created - a.created);
+  box.textContent = '';
+  if (!list.length) {
+    box.innerHTML = '<div class="empty">まだありません。印鑑・サイン・画像を作るときに「保存して次も使う」にチェックを入れて使うと、ここに出ます。</div>';
+    return 0;
+  }
+  for (const rec of list) {
+    const d = document.createElement('div'), u = URL.createObjectURL(rec.png), label = rec.label || KIND_LABEL[rec.kind] || '';
+    thumbUrls.push(u);
+    d.className = 'sv'; d.tabIndex = 0; d.setAttribute('role', 'button');
+    d.innerHTML = `<div class="th checker"><img alt=""></div><div class="lb"></div><button type="button" class="icon del" title="消す" aria-label="消す">${ICON.del}</button>`;
+    d.querySelector('img').src = u;
+    d.querySelector('.lb').textContent = label === KIND_LABEL[rec.kind] ? label : `${KIND_LABEL[rec.kind] || ''}：${label}`;
+    d.title = `${label}（${rec.w === rec.h ? rec.w + 'mm' : `${rec.w}×${rec.h}mm`}）`;
+    d.addEventListener('click', async e => {
+      if (!e.target.closest('.del')) return pickSaved(rec);
+      if (!confirm(`「${label}」を、この端末から消しますか？\n（置いてあるものは消えません）`)) return;
+      try { await StampStore.remove(rec.id); } catch (err) { console.warn(err); toast('消せませんでした'); }
+      refreshSaved();
+    });
+    d.addEventListener('keydown', e => { if (e.target === d && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickSaved(rec); } });
+    box.appendChild(d);
+  }
+  return list.length;
+}
+async function pickSaved(rec) {
+  const id = 's' + rec.id, have = state.images.get(id);
+  let canvas = have && have.canvas;
+  if (!canvas) {
+    try { canvas = await Stamp.fromBlob(rec.png); }
+    catch (e) { console.warn(e); return toast('読み込めませんでした'); }
+  }
+  useStamp(id, canvas, rec.w, rec.h);
+}
+
+/* 印鑑を作る */
+function setupSealFonts() {
+  if (fontsReady) return;
+  fontsReady = true;
+  const av = Stamp.sealFonts(), all = Object.keys(Stamp.SEAL_FONTS), keys = all.filter(k => av[k]);
+  $('#sealFonts').innerHTML = keys.map(k => `<label><input type="radio" name="sealFont" value="${k}">${Stamp.SEAL_FONTS[k].label}</label>`).join('');
+  if (!keys.includes(so.sealFont)) so.sealFont = keys[0];
+  const missing = all.filter(k => !av[k]).map(k => `「${Stamp.SEAL_FONTS[k].label}」`).join('');
+  const note = $('#sealFontNote');
+  note.hidden = !missing;
+  note.textContent = `※ この端末には${missing}の書体がないため、選べません（入っている書体は端末によってちがいます）。`;
+  setModalRadios();
+}
+const sealChars = () => [...$('#sealName').value.replace(/\s/g, '')];
+function sealName() { const c = sealChars(); return c.length >= 1 && c.length <= 4 ? c.join('') : ''; }
+function drawSeal() {
+  const cv = $('#sealPreview'), x = cv.getContext('2d'), n = sealChars().length, name = sealName(), note = $('#sealNameNote');
+  note.textContent = n > 4 ? '⚠ 4文字までです。' : '1〜3文字は縦に1列、4文字は2列（右の列から）に並べます。';
+  note.style.color = n > 4 ? 'var(--danger)' : '';
+  x.clearRect(0, 0, cv.width, cv.height);
+  if (name) x.drawImage(Stamp.seal({ name, font: so.sealFont, rough: so.sealRough }), 0, 0, cv.width, cv.height);
+  else { // まだ名字がないときは、うすい丸だけ
+    x.strokeStyle = '#e6b8b5'; x.lineWidth = 24; x.setLineDash([30, 22]);
+    x.beginPath(); x.arc(300, 300, 270, 0, Math.PI * 2); x.stroke(); x.setLineDash([]);
+  }
+  updateUse();
+}
+$('#sealName').addEventListener('input', drawSeal);
+$('#sealName').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('#stampUse').click(); } });
+
+/* サインを書く（線は「枠の横幅 = 1」とした座標でしまう。画面の大きさが変わっても同じ形） */
+const sign = { strokes: [], cur: null };
+const pad = $('#signPad'), padC = pad.querySelector('canvas');
+function sizePad() {
+  const W = pad.clientWidth, H = pad.clientHeight;
+  if (!W) return;
+  padC.width = Math.round(W * DPR); padC.height = Math.round(H * DPR);
+  drawPad();
+}
+function drawPad() {
+  const x = padC.getContext('2d'), s = padC.width;
+  x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, padC.width, padC.height);
+  x.setTransform(s, 0, 0, s, 0, 0);
+  Stamp.drawStrokes(x, sign.strokes, SIGN_COLORS[so.signColor], SIGN_PENS[so.signPen]);
+  $('#signPh').hidden = sign.strokes.length > 0;
+}
+function padPt(e) {
+  const r = padC.getBoundingClientRect(), r4 = v => Math.round(v * 1e4) / 1e4;
+  return [r4(clamp(e.clientX - r.left, 0, r.width) / r.width), r4(clamp(e.clientY - r.top, 0, r.height) / r.width)];
+}
+pad.addEventListener('pointerdown', e => {
+  if (sign.cur || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  e.preventDefault();
+  try { pad.setPointerCapture(e.pointerId); } catch (err) { /* なくても動く */ }
+  sign.cur = { id: e.pointerId, pts: padPt(e) };
+  sign.strokes.push(sign.cur.pts);
+  drawPad(); updateUse();
+});
+pad.addEventListener('pointermove', e => {
+  const cur = sign.cur;
+  if (!cur || e.pointerId !== cur.id) return;
+  const pts = cur.pts, min = 1.5 / pad.clientWidth, evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+  for (const ev of evs.length ? evs : [e]) {
+    const [x, y] = padPt(ev);
+    if (Math.hypot(x - pts[pts.length - 2], y - pts[pts.length - 1]) >= min) pts.push(x, y);
+  }
+  drawPad();
+});
+const endSign = e => { if (sign.cur && e.pointerId === sign.cur.id) sign.cur = null; };
+pad.addEventListener('pointerup', endSign);
+pad.addEventListener('pointercancel', endSign);
+$('#signUndo').addEventListener('click', () => { sign.cur = null; sign.strokes.pop(); drawPad(); updateUse(); });
+$('#signClear').addEventListener('click', () => { sign.cur = null; sign.strokes = []; drawPad(); updateUse(); });
+window.addEventListener('resize', () => { if (!modal.hidden && stab === 'sign') sizePad(); });
+
+/* 画像から（白い紙の部分を透明にする） */
+const img = { name: '', src: null, sel: null, drag: null, out: null, timer: 0 };
+const srcEl = $('#imgSrc');
+$('#imgPick').addEventListener('click', () => $('#imgFile').click());
+$('#imgFile').addEventListener('change', e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) loadStampImage(f);
+});
+async function loadStampImage(f) {
+  if (!isImageFile(f)) return toast('画像を選んでください');
+  let bmp;
+  try { bmp = await createImageBitmap(f, { imageOrientation: 'from-image' }); }
+  catch (e) { console.warn(e); return toast(`「${f.name}」を開けませんでした`); }
+  // 長い辺を 1600 画素までに縮め、透明な所は白にする（白い紙と同じに扱う）
+  const s = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const W = Math.max(1, Math.round(bmp.width * s)), H = Math.max(1, Math.round(bmp.height * s));
+  img.src = downscale(bmp, W, H, '#fff');
+  bmp.close();
+  img.name = stem(f.name); img.sel = null; img.out = null;
+  $('#imgName').textContent = f.name;
+  $('#imgWork').hidden = false; $('#imgAll').disabled = true;
+  srcEl.width = W; srcEl.height = H;
+  drawSrc(); runImage(true);
+}
+function drawSrc() {
+  const s = img.src, x = srcEl.getContext('2d'), r = img.drag || img.sel;
+  x.clearRect(0, 0, s.width, s.height); x.drawImage(s, 0, 0);
+  if (!r || r.w < 1 || r.h < 1) return;
+  x.fillStyle = 'rgba(15,20,30,.5)';
+  x.beginPath(); x.rect(0, 0, s.width, s.height); x.rect(r.x, r.y, r.w, r.h); x.fill('evenodd');
+  x.strokeStyle = '#2f6fed'; x.lineWidth = 2 * s.width / Math.max(1, srcEl.getBoundingClientRect().width);
+  x.strokeRect(r.x, r.y, r.w, r.h);
+}
+function srcPt(e) {
+  const r = srcEl.getBoundingClientRect();
+  return [clamp((e.clientX - r.left) / r.width, 0, 1) * img.src.width, clamp((e.clientY - r.top) / r.height, 0, 1) * img.src.height];
+}
+srcEl.addEventListener('pointerdown', e => {
+  if (!img.src || img.drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  e.preventDefault();
+  try { srcEl.setPointerCapture(e.pointerId); } catch (err) { /* なくても動く */ }
+  const [x, y] = srcPt(e);
+  img.drag = { id: e.pointerId, x0: x, y0: y, x, y, w: 0, h: 0 };
+});
+srcEl.addEventListener('pointermove', e => {
+  const d = img.drag;
+  if (!d || e.pointerId !== d.id) return;
+  const [x, y] = srcPt(e);
+  Object.assign(d, { x: Math.min(d.x0, x), y: Math.min(d.y0, y), w: Math.abs(x - d.x0), h: Math.abs(y - d.y0) });
+  drawSrc();
+});
+function endImgDrag(e, cancel) {
+  const d = img.drag;
+  if (!d || e.pointerId !== d.id) return;
+  img.drag = null;
+  const min = Math.max(img.src.width, img.src.height) * 0.03; // 小さすぎる囲み（ただのタップ）は使わない
+  if (!cancel && d.w >= min && d.h >= min) {
+    img.sel = { x: Math.round(d.x), y: Math.round(d.y), w: Math.round(d.w), h: Math.round(d.h) };
+    $('#imgAll').disabled = false;
+    runImage(true);
+  }
+  drawSrc();
+}
+srcEl.addEventListener('pointerup', e => endImgDrag(e, false));
+srcEl.addEventListener('pointercancel', e => endImgDrag(e, true));
+$('#imgAll').addEventListener('click', () => { img.sel = null; $('#imgAll').disabled = true; drawSrc(); runImage(true); });
+$('#imgStrength').addEventListener('input', e => {
+  so.imgStrength = +e.target.value; $('#imgStrengthOut').textContent = so.imgStrength;
+  saveSettings(); runImage(false);
+});
+// 作り直す（スライダーを動かしている間は、止まってから）
+function runImage(now) {
+  clearTimeout(img.timer);
+  if (!img.src) return;
+  img.timer = setTimeout(() => {
+    const out = Stamp.fromImage(img.src, { rect: img.sel, strength: so.imgStrength, color: so.imgColor }), c = $('#imgOut');
+    img.out = out;
+    if (out) { c.width = out.width; c.height = out.height; c.getContext('2d').drawImage(out, 0, 0); }
+    else { c.width = c.height = 1; }
+    c.hidden = !out; $('#imgEmpty').hidden = !!out;
+    updateUse();
+  }, now ? 0 : 160);
+}
+
 loadSettings();
+setModalRadios();
 showHintState();
 showZoom();
 setTool('text');

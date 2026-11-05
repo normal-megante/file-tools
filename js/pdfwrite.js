@@ -126,22 +126,60 @@ const PdfWrite = (() => {
     return c[0] === 'M' ? p(1) + ' m' : c[0] === 'L' ? p(1) + ' l' : c[0] === 'C' ? `${p(1)} ${p(3)} ${p(5)} c` : 'h';
   }).join('\n');
 
+  /* ---------- ハンコ・サインの画像（透明つき） ---------- */
+  // 色（RGB）と透明度（SMask）に分けて入れる。完全に透明な所の色は、インクの平均の色にしておく
+  // （黒のままだと、拡大したときにふちが黒っぽくにじむ PDF アプリがあるため）
+  async function stampImage(canvas) {
+    const W = canvas.width, H = canvas.height, px = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+    const rgb = new Uint8Array(W * H * 3), alpha = new Uint8Array(W * H);
+    let sr = 0, sg = 0, sb = 0, n = 0;
+    for (let j = 0; j < px.length; j += 4) if (px[j + 3] > 200) { sr += px[j]; sg += px[j + 1]; sb += px[j + 2]; n++; }
+    const avg = n ? [sr / n, sg / n, sb / n].map(Math.round) : [0, 0, 0];
+    // 一色のもの（印鑑・サインなど）なら、色は全部その色にする。
+    // 半透明の所の色は細かくばらつく（透明度から戻すときの誤差）ので、そろえたほうが軽くなり、見た目も変わらない
+    let one = true;
+    for (let j = 0; j < px.length && one; j += 4) {
+      if (px[j + 3] > 200 && (Math.abs(px[j] - avg[0]) > 12 || Math.abs(px[j + 1] - avg[1]) > 12 || Math.abs(px[j + 2] - avg[2]) > 12)) one = false;
+    }
+    for (let i = 0, j = 0; i < alpha.length; i++, j += 4) {
+      const a = px[j + 3], o = i * 3;
+      alpha[i] = a;
+      if (a && !one) { rgb[o] = px[j]; rgb[o + 1] = px[j + 1]; rgb[o + 2] = px[j + 2]; }
+      else { rgb[o] = avg[0]; rgb[o + 1] = avg[1]; rgb[o + 2] = avg[2]; }
+    }
+    const parms = c => new Map([['Predictor', 15], ['Colors', c], ['BitsPerComponent', 8], ['Columns', W]]);
+    const mask = new PStream(new Map([['Type', N('XObject')], ['Subtype', N('Image')], ['Width', W], ['Height', H],
+      ['ColorSpace', N('DeviceGray')], ['BitsPerComponent', 8], ['Filter', N('FlateDecode')], ['DecodeParms', parms(1)]]),
+      await deflate(pngFilter(alpha, W, H, 1)));
+    return new PStream(new Map([['Type', N('XObject')], ['Subtype', N('Image')], ['Width', W], ['Height', H],
+      ['ColorSpace', N('DeviceRGB')], ['BitsPerComponent', 8], ['Filter', N('FlateDecode')], ['DecodeParms', parms(3)], ['SMask', mask]]),
+      await deflate(pngFilter(rgb, W, H, 3)));
+  }
+
   /* ---------- 保存 ---------- */
   // doc：PdfDoc.open で開いたもの、pageInfo[i].inv：画面の座標 → PDF の座標 の変換（pdf.js の viewport の逆）
-  async function build(doc, pageInfo, items, { onProgress } = {}) {
+  // images：ハンコ・サインの画像（id → canvas）。同じ画像は何ページに押しても1回だけ入れる
+  async function build(doc, pageInfo, items, { images = new Map(), onProgress } = {}) {
     const byPage = new Map();
     for (const it of items) { if (!byPage.has(it.page)) byPage.set(it.page, []); byPage.get(it.page).push(it); }
     const tag = Math.random().toString(36).slice(2, 6); // 元のページの部品の名前とぶつからないように
     const texts = items.filter(it => it.type === 'text' && it.text.trim());
     const font = texts.length ? hiddenFont(texts) : null;
-    const edits = new Map();
+    const edits = new Map(), stamps = new Map(); // 画像の id → [PDF の画像, 名前]
     let done = 0, nImg = 0;
     for (const [pi, list] of [...byPage].sort((a, b) => a[0] - b[0])) {
       const ops = ['q', pageInfo[pi].inv.map(fmt).join(' ') + ' cm'], xobj = new Map(), fonts = new Map();
       for (const it of list) {
         if (onProgress) onProgress(done++, items.length);
         if (it.type === 'white') ops.push(`q 1 1 1 rg ${fmt(it.x)} ${fmt(it.y)} ${fmt(it.w)} ${fmt(it.h)} re f Q`);
-        else if (it.type === 'text') {
+        else if (it.type === 'image') {
+          const src = images.get(it.img);
+          if (!src) continue;
+          if (!stamps.has(it.img)) stamps.set(it.img, [await stampImage(src), `W${tag}s${stamps.size}`]);
+          const [img, name] = stamps.get(it.img);
+          xobj.set(name, img);
+          ops.push(`q ${fmt(it.w)} 0 0 ${fmt(-it.h)} ${fmt(it.x)} ${fmt(it.y + it.h)} cm /${name} Do Q`);
+        } else if (it.type === 'text') {
           if (!it.text.trim()) continue;
           const name = `W${tag}i${nImg++}`, { img, L } = await textImage(it);
           xobj.set(name, img);
