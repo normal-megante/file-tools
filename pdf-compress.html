@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF の圧縮｜ファイルツール箱</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/common.css">
+<style>
+.files{display:flex;flex-direction:column;gap:8px;margin:6px 0 4px}
+.frow{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--fc);border-radius:10px;padding:10px 8px 10px 12px;box-shadow:var(--shadow)}
+.frow .ficon{color:var(--fc);flex:none;display:grid;place-items:center;width:28px}
+.frow .ficon .spin{width:20px;height:20px}
+.frow .fmain{flex:1 1 auto;min-width:0}
+.frow .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frow .res{font-size:13px;margin-top:2px}
+.frow .res:empty{display:none}
+.res.good{color:var(--ok);font-weight:600}
+.res.none{color:var(--muted)}
+.res.err{color:var(--danger)}
+.res .why{font-weight:400;color:var(--muted)}
+.files.busy .icon{pointer-events:none;opacity:.4}
+.result.warn{background:var(--warn-soft)}
+.result.warn .head{color:var(--warn)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="layout">
+    <section>
+      <header>
+        <a class="back" href="./">← ツール箱にもどる</a>
+        <h1>PDF の圧縮</h1>
+        <p>PDF のファイルサイズを小さくします。処理はこの端末の中だけで行われます。</p>
+      </header>
+
+      <div id="drop" class="drop" tabindex="0" role="button" aria-label="PDFを追加">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div class="big" id="dropTitle"></div>
+        <div class="muted"><span class="pc-only">またはクリックして選択（いくつでも）</span><span class="touch-only">いくつでも選べます</span></div>
+        <input type="file" id="file" accept="application/pdf,.pdf" multiple hidden>
+      </div>
+
+      <div class="listbar" id="listbar" hidden>
+        <span id="count"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn danger" id="clear">すべて削除</button>
+      </div>
+      <div id="files" class="files"></div>
+
+      <div class="tips">
+        <b>メモ</b>
+        <ul>
+          <li>「ふつう」は、文字・図・しおり・リンク・フォームはそのままで、中の写真だけを小さくします。写真の少ない PDF（文字だけの書類など）は、あまり小さくなりません。</li>
+          <li>「強力」はページを丸ごと画像にするので、スキャンした PDF にもよく効きます。ただし文字は選べなくなり（検索・コピーできない）、リンクやしおりも消えます。</li>
+          <li>パスワードや印刷禁止などの保護は外れます。小さくならなかったファイルは保存しません。</li>
+        </ul>
+      </div>
+    </section>
+
+    <aside>
+      <form id="settings" class="panel" onsubmit="return false">
+       <div class="panel-body">
+        <h2>圧縮のしかた</h2>
+        <div class="opts">
+          <label class="opt"><input type="radio" name="method" value="normal" checked><span><span class="t">ふつう<em class="rec">おすすめ</em></span><span class="d">文字はそのまま、中の写真だけ小さく。文字はくっきり、検索やコピーもできる</span></span></label>
+          <label class="opt"><input type="radio" name="method" value="strong"><span><span class="t">強力</span><span class="d">ページを丸ごと画像に。スキャンした PDF や、「ふつう」で小さくならないときに。文字は選べなくなる</span></span></label>
+        </div>
+
+        <h2>強さ</h2>
+        <div class="seg">
+          <label><input type="radio" name="level" value="low">弱め</label>
+          <label><input type="radio" name="level" value="mid" checked>ふつう</label>
+          <label><input type="radio" name="level" value="high">強め</label>
+        </div>
+        <p class="note" id="levelNote"></p>
+
+        <div id="saveBox" hidden>
+          <h2>保存のしかた</h2>
+          <div class="seg">
+            <label><input type="radio" name="save" value="each">1つずつ</label>
+            <label><input type="radio" name="save" value="zip">ZIPにまとめる</label>
+          </div>
+        </div>
+
+        <h2>ファイル名</h2>
+        <div class="fn" id="fnBox"><input type="text" id="fname" autocomplete="off" spellcheck="false"><span id="ext"></span></div>
+        <p class="note" id="nameNote"></p>
+       </div>
+       <div class="panel-foot">
+        <button type="button" id="make" class="primary" disabled>圧縮して保存</button>
+        <div id="progress" class="progress" hidden><div class="bar"><i id="pbar"></i></div><div id="ptext" class="ptext"></div></div>
+        <div id="result" class="result" hidden></div>
+       </div>
+      </form>
+    </aside>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/pdfdoc.js"></script>
+<script src="js/pdfview.js"></script>
+<script src="js/pdfshrink.js"></script>
+<script>
+'use strict';
+// =========================================================
+// PDF の圧縮
+//   ふつう：js/pdfshrink.js の compress（写真だけ縮める。自作の pdfdoc.js で書き直す）
+//   強力　：js/pdfshrink.js の rasterize（pdf.js でページを画像にする）
+// =========================================================
+const form = $('#settings'), list = $('#files');
+const state = { files: [], seq: 0, loading: 0, busy: false, outputs: [], outName: '', fnameTouched: false };
+const COLORS = ['#2f6fed', '#e5534b', '#2f9e6e', '#d98a1c', '#7c5cdb', '#1f9bb4', '#c4458e', '#7a8a2a'];
+const TOUCH = matchMedia('(pointer:coarse)').matches;
+// 強さ → 解像度（dpi）と JPEG の画質
+const LEVELS = {
+  normal: { low: { dpi: 200, q: 0.85 }, mid: { dpi: 150, q: 0.75 }, high: { dpi: 100, q: 0.6 } },
+  strong: { low: { dpi: 200, q: 0.8 }, mid: { dpi: 150, q: 0.65 }, high: { dpi: 100, q: 0.5 } },
+};
+const MAX_PIXELS = TOUCH ? 16e6 : 36e6; // 1枚の画素数の上限（メモリが足りなくならないように）
+const PDF_ICON = SVG('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>', 24);
+
+/* ---------- PDF を入れる ---------- */
+const isPdfFile = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+function errMessage(name, e) {
+  const code = e && e.code;
+  if (code === 'password') return `「${name}」はパスワードが入らなかったため開けませんでした`;
+  if (code === 'unsupported') return `「${name}」は対応していない保護がかかっています`;
+  if (code === 'notpdf') return `「${name}」は PDF として読めませんでした`;
+  return `「${name}」を読み込めませんでした`;
+}
+// パスワードつきなら聞く（やめたら password のエラー）
+async function openPdf(name, bytes) {
+  try { return { doc: await PdfDoc.open(bytes), password: '' }; }
+  catch (e) { if (!e || e.code !== 'password') throw e; }
+  for (let again = false; ; again = true) {
+    const pw = prompt(again ? `パスワードが違います。「${name}」のパスワードをもう一度入れてください` : `「${name}」はパスワードつきです。パスワードを入れてください`);
+    if (pw == null) throw new PdfDoc.PdfError('password');
+    try { return { doc: await PdfDoc.open(bytes, { password: pw }), password: pw }; }
+    catch (e) { if (!e || e.code !== 'password') throw e; }
+  }
+}
+async function addFiles(input) {
+  const all = [...input];
+  const use = all.filter(isPdfFile).sort((a, b) => collator.compare(a._path || a.name, b._path || b.name));
+  if (all.length > use.length) toast(`PDF ではないファイルを ${all.length - use.length} 件スキップしました`);
+  if (!use.length) return;
+  state.loading++; refresh();
+  const errors = [];
+  for (const f of use) {
+    try {
+      const bytes = new Uint8Array(await f.arrayBuffer()), { doc, password } = await openPdf(f.name, bytes);
+      addRow({ id: ++state.seq, name: f.name, bytes, size: bytes.length, doc, password, pages: doc.numPages, color: COLORS[state.seq % COLORS.length], result: null });
+      clearResults();
+      await wait(0);
+    } catch (e) {
+      console.warn(f.name, e);
+      errors.push(errMessage(f.name, e));
+    }
+  }
+  state.loading--; refresh();
+  if (errors.length) toast(errors.length > 1 ? `${errors[0]}（ほか ${errors.length - 1} 件も読み込めませんでした）` : errors[0]);
+}
+setupFileInput({ drop: $('#drop'), input: $('#file'), onFiles: addFiles, isBusy: () => state.busy });
+
+/* ---------- ファイルの一覧 ---------- */
+function addRow(f) {
+  const el = document.createElement('div');
+  el.className = 'frow'; el.style.setProperty('--fc', f.color);
+  el.innerHTML = `<span class="ficon">${PDF_ICON}</span><div class="fmain"><div class="name"></div><div class="sub"></div><div class="res"></div></div>
+    <button type="button" class="icon del" title="${ACTION_LABEL.del}" aria-label="${ACTION_LABEL.del}">${ICON.del}</button>`;
+  el.querySelector('.name').textContent = f.name; el.querySelector('.name').title = f.name;
+  el.querySelector('.sub').textContent = `${f.pages} ページ ・ ${fmtSize(f.size)}`;
+  el.querySelector('.del').addEventListener('click', () => {
+    if (state.busy) return;
+    el.remove(); state.files = state.files.filter(x => x !== f);
+    clearResults(); refresh();
+  });
+  f.el = el; state.files.push(f); list.appendChild(el);
+}
+function showRow(f, working) {
+  f.el.querySelector('.ficon').innerHTML = working ? '<div class="spin"></div>' : PDF_ICON;
+  const res = f.el.querySelector('.res'), r = f.result;
+  res.className = 'res'; res.textContent = '';
+  if (working) { res.textContent = '圧縮しています…'; res.classList.add('none'); return; }
+  if (!r) return;
+  if (r.error) { res.textContent = r.error; res.classList.add('err'); return; }
+  if (r.ok) {
+    res.textContent = `→ ${fmtSize(r.blob.size)}（${Math.round((1 - r.blob.size / f.size) * 100)}% 小さく）`;
+    res.classList.add('good');
+  } else { res.textContent = '小さくなりませんでした（保存していません）'; res.classList.add('none'); }
+  if (r.why) { const w = document.createElement('span'); w.className = 'why'; w.textContent = ' ・ ' + r.why; res.appendChild(w); }
+}
+function clearResults() {
+  for (const f of state.files) { f.result = null; showRow(f, false); }
+  $('#result').hidden = true;
+}
+$('#clear').addEventListener('click', () => {
+  if (state.busy) return;
+  list.textContent = ''; state.files = []; state.fnameTouched = false;
+  clearResults(); refresh();
+});
+
+/* ---------- 画面の表示を整える ---------- */
+function refresh() {
+  const n = state.files.length;
+  list.classList.toggle('busy', state.busy);
+  $('#listbar').hidden = !n;
+  $('#drop').classList.toggle('compact', n > 0);
+  $('#dropTitle').textContent = n ? (TOUCH ? 'タップして PDF を追加' : 'PDF を追加（ドラッグ＆ドロップ / クリック）')
+    : (TOUCH ? 'タップして PDF を選ぶ' : 'ここに PDF をドラッグ＆ドロップ');
+  const total = state.files.reduce((s, f) => s + f.size, 0);
+  $('#count').textContent = (n ? `${n} ファイル ・ 合計 ${fmtSize(total)}` : '') + (state.loading ? '　読み込み中…' : '');
+  updatePanel();
+}
+
+/* ---------- 設定 ---------- */
+const SETTINGS_KEY = 'pdf-compress-settings-v1';
+form.elements.save.value = TOUCH ? 'each' : 'zip';
+const today = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`; };
+const outName = f => `${stem(f.name)}_圧縮`;
+function defaultName() {
+  const n = state.files.length;
+  return !n ? '' : n === 1 ? outName(state.files[0]) : `PDFの圧縮_${today()}`;
+}
+const level = () => LEVELS[form.elements.method.value][form.elements.level.value];
+function updatePanel() {
+  const f = form.elements, n = state.files.length, lv = level(), strong = f.method.value === 'strong';
+  const word = { low: '画質を優先', mid: '画質と小ささのバランス', high: '小ささを優先' }[f.level.value];
+  $('#levelNote').textContent = strong
+    ? `${word}：ページを ${lv.dpi} dpi・画質 ${Math.round(lv.q * 100)}% の画像にします`
+    : `${word}：写真を ${lv.dpi} dpi 相当まで縮め、画質 ${Math.round(lv.q * 100)}% の JPEG にします`;
+  $('#saveBox').hidden = n < 2;
+  const zip = n > 1 && f.save.value === 'zip';
+  $('#fnBox').hidden = n > 1 && !zip;
+  $('#ext').textContent = zip ? '.zip' : '.pdf';
+  $('#nameNote').textContent = n > 1 ? (zip ? 'ZIP の中は「元の名前_圧縮.pdf」になります' : 'それぞれ「元の名前_圧縮.pdf」で保存します') : '';
+  if (!state.fnameTouched) $('#fname').value = defaultName();
+  const mk = $('#make');
+  mk.textContent = n > 1 ? `${n} ファイルを圧縮して保存` : '圧縮して保存';
+  mk.disabled = state.busy || state.loading > 0 || !n;
+}
+function saveSettings() {
+  try { const f = form.elements; localStorage.setItem(SETTINGS_KEY, JSON.stringify({ method: f.method.value, level: f.level.value, save: f.save.value })); }
+  catch (e) { /* 保存できなくても動作には影響なし */ }
+}
+function loadSettings() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'), f = form.elements;
+    if (LEVELS[d.method]) f.method.value = d.method;
+    if (['low', 'mid', 'high'].includes(d.level)) f.level.value = d.level;
+    if (['each', 'zip'].includes(d.save)) f.save.value = d.save;
+  } catch (e) { /* 初回やブロック時は既定値のまま */ }
+}
+form.addEventListener('input', e => { if (e.target.id === 'fname') state.fnameTouched = !!e.target.value.trim(); updatePanel(); saveSettings(); });
+form.addEventListener('change', e => {
+  if (e.target.name === 'method' || e.target.name === 'level') clearResults(); // 前の結果は今の設定のものではなくなる
+  updatePanel(); saveSettings();
+});
+
+/* ---------- 圧縮して保存 ---------- */
+function setProgress(done, total, label) {
+  $('#progress').hidden = false;
+  $('#pbar').style.width = (total ? Math.min(1, done / total) * 100 : 0) + '%';
+  $('#ptext').textContent = label;
+}
+async function compressOne(f, k, n, strong, lv) {
+  const head = n > 1 ? `${k + 1} / ${n} ファイル目：` : '';
+  if (!strong) {
+    const r = await PdfShrink.compress(f.doc, {
+      dpi: lv.dpi, quality: lv.q, maxPixels: MAX_PIXELS / 1.5,
+      onProgress: (step, d, t) => step === 'image'
+        ? setProgress(k + 0.9 * d / Math.max(1, t), n, `${head}写真を縮めています（${Math.min(d + 1, t)} / ${t}）…`)
+        : setProgress(k + 0.95, n, `${head}書き出しています…`),
+    });
+    return { blob: r.blob, why: !r.images ? '写真は入っていませんでした' : !r.shrunk ? '写真はもう十分小さいようです' : `写真 ${r.shrunk} / ${r.images} 枚を縮めました` };
+  }
+  const pdf = await PdfView.open(f.bytes, { onPassword: () => f.password || null });
+  try {
+    const blob = await PdfShrink.rasterize(pdf, {
+      dpi: lv.dpi, quality: lv.q, maxPixels: MAX_PIXELS, title: stem(f.name),
+      onProgress: (step, d, t) => setProgress(k + d / t, n, `${head}ページを画像にしています（${d + 1} / ${t}）…`),
+    });
+    return { blob };
+  } finally { PdfView.close(pdf); }
+}
+$('#make').addEventListener('click', async () => {
+  const files = state.files.slice(), n = files.length;
+  if (!n || state.busy) return;
+  const strong = form.elements.method.value === 'strong', lv = level();
+  const base = sanitize($('#fname').value) || defaultName() || 'PDF';
+  state.busy = true; refresh();
+  $('#result').hidden = true;
+  for (const f of files) { f.result = null; showRow(f, false); }
+  try {
+    for (let k = 0; k < n; k++) {
+      const f = files[k];
+      showRow(f, true);
+      setProgress(k, n, '');
+      await wait(0);
+      try {
+        const r = await compressOne(f, k, n, strong, lv);
+        f.result = { ...r, ok: r.blob.size < f.size * 0.98 }; // ほとんど変わらないなら保存しない
+      } catch (e) {
+        console.error(f.name, e);
+        f.result = { error: 'うまく圧縮できませんでした：' + (e && e.message || e) };
+      }
+      showRow(f, false);
+    }
+    setProgress(1, 1, '');
+    const name = uniqueNamer(), ok = files.filter(f => f.result && f.result.ok);
+    state.outputs = ok.map(f => new File([f.result.blob], n === 1 ? name(base, '.pdf') : name(sanitize(outName(f)) || 'PDF', '.pdf'), { type: 'application/pdf' }));
+    state.outName = base;
+    if (state.outputs.length) await saveOutputs();
+    showResult(files, strong);
+  } finally {
+    state.busy = false; $('#progress').hidden = true; refresh();
+  }
+});
+async function saveOutputs() {
+  const outs = state.outputs;
+  if (outs.length > 1 && form.elements.save.value === 'zip') {
+    saveBlob(await makeZip(outs.map(f => ({ name: f.name, blob: f }))), state.outName + '.zip');
+  } else {
+    for (const f of outs) { saveBlob(f, f.name); if (outs.length > 1) await wait(250); }
+  }
+}
+function showResult(files, strong) {
+  const outs = state.outputs, r = $('#result');
+  const ok = files.filter(f => f.result && f.result.ok), skipped = files.length - ok.length;
+  r.classList.toggle('warn', !outs.length);
+  if (!outs.length) {
+    r.innerHTML = '<div class="head">小さくできませんでした</div><div class="small muted line"></div>';
+    r.querySelector('.line').textContent = strong ? '「強め」を選ぶと、もう少し小さくなるかもしれません。'
+      : 'この PDF は写真が少ないか、もう十分に圧縮されています。「強力」を試してみてください（文字は選べなくなります）。';
+    r.hidden = false; return;
+  }
+  const before = ok.reduce((s, f) => s + f.size, 0), after = outs.reduce((s, f) => s + f.size, 0);
+  r.innerHTML = `<div class="head">✓ 保存しました</div><div class="line"></div><div class="small muted extra" hidden></div>
+    <div class="small muted">保存先：ダウンロードフォルダ</div>
+    <div class="btns"><button type="button" class="btn" id="again">もう一度保存</button>${canShareFiles(outs) ? '<button type="button" class="btn" id="share">共有</button>' : ''}</div>`;
+  r.querySelector('.line').textContent = `${outs.length > 1 ? outs.length + ' ファイル ・ ' : ''}${fmtSize(before)} → ${fmtSize(after)}（${Math.round((1 - after / before) * 100)}% 小さく）`;
+  const extra = [];
+  if (skipped) extra.push(`${skipped} ファイルは小さくならなかったか、圧縮できなかったので保存していません。`);
+  if (strong) extra.push('ページを画像にしたので、文字は選べなくなっています。');
+  if (extra.length) { const e = r.querySelector('.extra'); e.textContent = extra.join(''); e.hidden = false; }
+  r.querySelector('#again').addEventListener('click', saveOutputs);
+  const sh = r.querySelector('#share');
+  if (sh) sh.addEventListener('click', () => shareFiles(state.outputs));
+  r.hidden = false;
+}
+
+loadSettings();
+refresh();
+</script>
+</body>
+</html>

@@ -52,7 +52,8 @@ const PdfView = (() => {
       s = Math.min(s, 16000 / Math.max(v1.width, v1.height)); // ブラウザの canvas の限界
       const vp = page.getViewport({ scale: s, rotation: r });
       const canvas = newCanvas(Math.max(1, Math.floor(vp.width)), Math.max(1, Math.floor(vp.height)));
-      await page.render({ canvas, viewport: vp }).promise;
+      // 注釈（フォームに入力された文字なども）を絵として一緒に描く。既定ではフォームは描かれない
+      await page.render({ canvas, viewport: vp, annotationMode: (await lib()).AnnotationMode.ENABLE }).promise;
       return { canvas, view: page.view, rotation: r, scale: s, shrunk: px > maxPixels };
     } finally { page.cleanup(); }
   }

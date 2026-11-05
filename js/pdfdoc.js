@@ -371,7 +371,8 @@ async function hash2B(pw, salt, u) {
 }
 
 class Crypt {
-  static async create(encDict, id0, get) {
+  // password：利用者か所有者のパスワード（なければ空。制限だけの PDF は空で開ける）
+  static async create(encDict, id0, get, password = '') {
     if (nameOf(await get(encDict.get('Filter'))) !== 'Standard') throw new PdfError('unsupported', '対応していない保護のしかたです');
     const c = new Crypt(), num = async k => { const v = await get(encDict.get(k)); return typeof v === 'number' ? v : null; };
     const bytes = async k => { const v = await get(encDict.get(k)); return v instanceof PStr ? v.b : new Uint8Array(0); };
@@ -393,8 +394,8 @@ class Crypt {
       if (V === 4) bits = 128;
     }
     if (R >= 5) {
-      // AES-256。空のパスワードで開けるか試す
-      const pw = new Uint8Array(0), ue = await bytes('UE'), oe = await bytes('OE');
+      // AES-256（パスワードは UTF-8 で最大 127 バイト）
+      const pw = new TextEncoder().encode(password).subarray(0, 127), ue = await bytes('UE'), oe = await bytes('OE');
       const h = (salt, u) => (R === 5 ? sha('SHA-256', concat([pw, salt, u])) : hash2B(pw, salt, u));
       let key = null;
       if (eqBytes((await h(U.subarray(32, 40), new Uint8Array(0))).subarray(0, 32), U.subarray(0, 32)))
@@ -419,10 +420,11 @@ class Crypt {
       for (let i = 1; i <= 19; i++) x = rc4(key.map(b => b ^ i), x);
       return eqBytes(x.subarray(0, 16), U.subarray(0, 16));
     };
-    let key = makeKey(PAD);
+    const padded = concat([enc(password).subarray(0, 32), PAD]).subarray(0, 32);
+    let key = makeKey(padded);
     if (!checkUser(key)) {
-      // 所有者パスワードが空の場合（まれ）
-      let hh = md5(PAD);
+      // 所有者パスワードとして試す（パスワードなしのときは、所有者パスワードが空の場合。まれ）
+      let hh = md5(padded);
       if (R >= 3) for (let i = 0; i < 50; i++) hh = md5(hh.subarray(0, n));
       const ok = hh.subarray(0, n);
       let up = O.subarray(0, 32);
@@ -472,8 +474,8 @@ class Crypt {
 
 /* ---------- PDF を読む ---------- */
 class Doc {
-  constructor(buf) {
-    this.buf = buf; this.xref = new Map(); this.cache = new Map(); this.objStms = new Map();
+  constructor(buf, password = '') {
+    this.buf = buf; this.password = password; this.xref = new Map(); this.cache = new Map(); this.objStms = new Map();
     this.trailer = new Map(); this.crypt = null; this.encryptNum = -1; this.scanned = null; this.repaired = false;
   }
   async get(v) { return v instanceof PRef ? this.getObj(v.num) : v; }
@@ -672,7 +674,7 @@ class Doc {
     }
     if (!(e instanceof Map)) throw new PdfError('broken', '保護の情報が読めません');
     const id = this.trailer.get('ID'), id0 = Array.isArray(id) && id[0] instanceof PStr ? id[0].b : new Uint8Array(0);
-    this.crypt = await Crypt.create(e, id0, v => this.get(v));
+    this.crypt = await Crypt.create(e, id0, v => this.get(v), this.password);
     this.encrypted = true;
     this.cache.clear(); this.objStms.clear();
   }
@@ -735,10 +737,94 @@ class Doc {
   }
 }
 
-async function open(bytes) {
-  const doc = new Doc(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+// password：パスワードつきの PDF のとき（違えば code: 'password' のエラー）
+async function open(bytes, { password = '' } = {}) {
+  const doc = new Doc(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), password);
   await doc.init();
   return doc;
+}
+
+/* ---------- 画像がページにどれくらいの大きさで描かれているか ---------- */
+// 返り値：画像の番号 → { w, h }（pt。いちばん大きく描かれたときの、画像の横方向・縦方向の長さ）
+// ページの中身（と、その中のフォーム XObject）を読み、q / Q / cm / Do だけを追いかける。
+// 注釈の見た目やパターンの中の画像は数えない（見つからない画像は縮めない）
+const IDENT = [1, 0, 0, 1, 0, 0];
+const mul = (m, n) => [m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3], m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3],
+  m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5]];
+const isMatrix = m => Array.isArray(m) && m.length === 6 && m.every(v => typeof v === 'number' && isFinite(v));
+async function imageUsage(doc, { onProgress } = {}) {
+  const usage = new Map(), formCache = new Map();
+  const area = m => Math.abs(m[0] * m[3] - m[1] * m[2]);
+  const keep = (draws, num, m) => { const o = draws.get(num); if (!o || area(m) > area(o)) draws.set(num, m); };
+  // data（中身の命令）の中で描かれる画像 → その画像の行列（data 自身の座標で）
+  const scan = async (data, res, depth, chain) => {
+    const draws = new Map(), stack = [], ops = [], ps = new Parser(data, 0);
+    const xobjs = res instanceof Map ? await doc.get(res.get('XObject')) : null;
+    let ctm = IDENT;
+    for (;;) {
+      ps.skipWs();
+      if (ps.p >= data.length) break;
+      let v;
+      try { v = ps.next(); } catch (e) { break; }
+      if (!(v instanceof PKw)) { ops.push(v); continue; }
+      const k = v.k;
+      if (k === 'q') stack.push(ctm);
+      else if (k === 'Q') { if (stack.length) ctm = stack.pop(); }
+      else if (k === 'cm') { const m = ops.slice(-6); if (isMatrix(m)) ctm = mul(m, ctm); }
+      else if (k === 'Do') {
+        const nm = ops[ops.length - 1], ref = nm instanceof PName && xobjs instanceof Map ? xobjs.get(nm.n) : null;
+        const x = await doc.get(ref);
+        if (x instanceof PStream) {
+          const sub = nameOf(await doc.get(x.dict.get('Subtype')));
+          if (sub === 'Image' && ref instanceof PRef) keep(draws, ref.num, ctm);
+          else if (sub === 'Form' && depth < 12 && !(ref instanceof PRef && chain.has(ref.num))) {
+            for (const [n, m] of await formDraws(ref, x, res, depth, chain)) keep(draws, n, mul(m, ctm));
+          }
+        }
+      } else if (k === 'BI') { // ページに直接書かれた小さな画像：中身（バイナリ）を読み飛ばす
+        for (;;) { ps.skipWs(); if (ps.p >= data.length) break; const t = ps.next(); if (t instanceof PKw && t.k === 'ID') break; }
+        let i = ps.p + 1;
+        for (;;) {
+          i = indexOf(data, 'EI', i);
+          if (i < 0) { i = data.length; break; }
+          if (WS[data[i - 1]] && (i + 2 >= data.length || WS[data[i + 2]] || DL[data[i + 2]])) { i += 2; break; }
+          i += 2;
+        }
+        ps.p = i;
+      }
+      ops.length = 0;
+    }
+    return draws;
+  };
+  const formDraws = async (ref, x, parentRes, depth, chain) => {
+    const own = await doc.get(x.dict.get('Resources')), cacheable = ref instanceof PRef && own instanceof Map;
+    if (cacheable && formCache.has(ref.num)) return formCache.get(ref.num);
+    let mtx = await doc.get(x.dict.get('Matrix'));
+    if (!isMatrix(mtx)) mtx = IDENT;
+    const draws = new Map();
+    try {
+      const inner = await scan(await decodeStream(x), own instanceof Map ? own : parentRes, depth + 1,
+        ref instanceof PRef ? new Set([...chain, ref.num]) : chain);
+      for (const [n, m] of inner) draws.set(n, mul(m, mtx));
+    } catch (e) { /* 読めないフォームは飛ばす */ }
+    if (cacheable) formCache.set(ref.num, draws);
+    return draws;
+  };
+  for (let i = 0; i < doc.pageList.length; i++) {
+    if (onProgress) onProgress(i, doc.pageList.length);
+    const pg = doc.pageList[i];
+    const res = await doc.get(pg.dict.has('Resources') ? pg.dict.get('Resources') : pg.inh.Resources);
+    const cont = await doc.get(pg.dict.get('Contents')), parts = [];
+    for (const c of Array.isArray(cont) ? cont : [cont]) {
+      const s = await doc.get(c);
+      if (s instanceof PStream) { try { parts.push(await decodeStream(s), enc('\n')); } catch (e) { /* 読めない部分は飛ばす */ } }
+    }
+    for (const [n, m] of await scan(concat(parts), res, 0, new Set())) {
+      const w = Math.hypot(m[0], m[1]), h = Math.hypot(m[2], m[3]), o = usage.get(n);
+      usage.set(n, o ? { w: Math.max(o.w, w), h: Math.max(o.h, h) } : { w, h });
+    }
+  }
+  return usage;
 }
 
 /* ---------- 書き出し ---------- */
@@ -910,6 +996,97 @@ async function writePages(pages, { title, onProgress } = {}) {
   return new Blob(parts, { type: 'application/pdf' });
 }
 
-return { open, writePages, PdfError, _test: { md5, rc4, aesCbcDecrypt, aesCbcEncrypt, Parser } };
+/* ---------- 文書を丸ごと書き直す（圧縮用） ---------- */
+async function deflate(data) {
+  const stream = new Blob([data]).stream().pipeThrough(new CompressionStream('deflate'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+const DROP_KEYS = new Set(['PieceInfo', 'Thumb']); // アプリ専用のデータ・ページの見本（表示には使わない）
+
+// しおり・リンク・フォーム・タグなどはそのまま、文書全体を書き直す。
+//   replace：元の番号 → 差し替える PStream（縮めた画像）
+//   ・使われていないオブジェクトや、追記で古くなった版は入れない
+//   ・圧縮されていないストリームは Flate で圧縮、ストリーム以外の小さなオブジェクトはまとめて圧縮（オブジェクトストリーム）
+//   ・保護（暗号化）は外れる
+// 返り値は Blob（application/pdf）
+async function rewrite(doc, { replace = new Map(), onProgress } = {}) {
+  const map = new Map(), queue = [], plain = [], parts = [], offsets = new Map();
+  let nextId = 1, pos = 0;
+  const alloc = () => nextId++;
+  const raw = x => { const u = typeof x === 'string' ? enc(x) : x; parts.push(u); pos += u.length; };
+  const writeStream = (id, dict, data) => {
+    offsets.set(id, pos); dict.set('Length', data.length);
+    raw(`${id} 0 obj\n${ser(dict)}\nstream\n`); raw(data); raw('\nendstream\nendobj\n');
+  };
+  const copy = v => {
+    if (v instanceof PRef) {
+      let id = map.get(v.num);
+      if (id === undefined) { id = alloc(); map.set(v.num, id); queue.push([v.num, id]); }
+      return new ORef(id);
+    }
+    if (Array.isArray(v)) return v.map(copy);
+    if (v instanceof Map) { const m = new Map(); for (const [k, x] of v) if (!DROP_KEYS.has(k)) m.set(k, copy(x)); return m; }
+    return v;
+  };
+  const top = v => { // trailer の Root・Info（直接書かれていても番号をつける）
+    const c = copy(v);
+    if (c instanceof ORef || c == null) return c;
+    const id = alloc(); plain.push([id, ser(c)]); return new ORef(id);
+  };
+  raw('%PDF-1.7\n%\xE2\xE3\xCF\xD3\n');
+  const root = top(doc.trailer.get('Root')), info = doc.trailer.has('Info') ? top(doc.trailer.get('Info')) : null;
+  let done = 0;
+  while (queue.length) {
+    const [num, id] = queue.shift();
+    const v = replace.has(num) ? replace.get(num) : await doc.getObj(num);
+    if (v instanceof PStream) {
+      const src = new Map(v.dict); src.delete('Length'); // 長さは書き直すので、別オブジェクトの長さは引き込まない
+      const d = copy(src);
+      let data = v.data;
+      if (!d.has('Filter') && data.length > 64 && nameOf(d.get('Type')) !== 'Metadata') {
+        const z = await deflate(data);
+        if (z.length < data.length) { data = z; d.set('Filter', new PName('FlateDecode')); d.delete('DecodeParms'); }
+      }
+      writeStream(id, d, data);
+    } else plain.push([id, ser(copy(v === undefined ? null : v))]);
+    if (onProgress && ++done % 200 === 0) onProgress(done, done + queue.length);
+  }
+  // ストリーム以外をまとめて圧縮する（100 個ずつ）
+  const loc = new Map();
+  for (let i = 0; i < plain.length; i += 100) {
+    const chunk = plain.slice(i, i + 100), sid = alloc(), bodies = chunk.map(([, s]) => s + '\n');
+    let o = 0;
+    const head = chunk.map(([id], k) => { const r = `${id} ${o}`; o += bodies[k].length; return r; }).join(' ') + '\n';
+    writeStream(sid, new Map([['Type', new PName('ObjStm')], ['N', chunk.length], ['First', head.length], ['Filter', new PName('FlateDecode')]]),
+      await deflate(enc(head + bodies.join(''))));
+    chunk.forEach(([id], k) => loc.set(id, [sid, k]));
+  }
+  // xref ストリーム（オブジェクトストリームを使うときは、こちらの形が必要）
+  const xid = alloc(), size = nextId, xpos = pos, rows = new Uint8Array(size * 7);
+  offsets.set(xid, xpos);
+  const put = (o, v, n) => { for (let k = n - 1; k >= 0; k--) { rows[o + k] = v & 255; v = Math.floor(v / 256); } };
+  rows[5] = rows[6] = 255; // 0 番は空き
+  for (let id = 1; id < size; id++) {
+    const r = id * 7;
+    if (offsets.has(id)) { rows[r] = 1; put(r + 1, offsets.get(id), 4); }
+    else if (loc.has(id)) { rows[r] = 2; put(r + 1, loc.get(id)[0], 4); put(r + 5, loc.get(id)[1], 2); }
+  }
+  const idOld = doc.trailer.get('ID'), idNew = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(idNew);
+  const id0 = Array.isArray(idOld) && idOld[0] instanceof PStr && !doc.encrypted ? new PStr(idOld[0].b, true) : new PStr(idNew, true);
+  const xd = new Map([['Type', new PName('XRef')], ['Size', size], ['W', [1, 4, 2]], ['Root', root]]);
+  if (info) xd.set('Info', info);
+  xd.set('ID', [id0, new PStr(idNew, true)]);
+  xd.set('Filter', new PName('FlateDecode'));
+  writeStream(xid, xd, await deflate(rows));
+  raw(`startxref\n${xpos}\n%%EOF\n`);
+  return new Blob(parts, { type: 'application/pdf' });
+}
+
+return {
+  open, writePages, rewrite, imageUsage, decodeStream, PdfError,
+  types: { PName, PRef, PStr, PStream },
+  _test: { md5, rc4, aesCbcDecrypt, aesCbcEncrypt, Parser },
+};
 })();
 if (typeof module !== 'undefined') module.exports = PdfDoc;

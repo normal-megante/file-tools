@@ -215,7 +215,8 @@ async function buildPdf(items, o, title, { encode, onPage } = {}) {
       }
       cs = `[/ICCBased ${iccIds.get(key)} 0 R]`;
     }
-    const [W, H] = displaySize(img, rot), lay = pageLayout(W, H, o);
+    // img.page = [幅, 高さ]（pt）があれば、その大きさのページいっぱいに置く（PDF の圧縮「強力」で元のページの大きさを保つ）
+    const [W, H] = displaySize(img, rot), lay = img.page ? { pw: img.page[0], ph: img.page[1], box: { x: 0, y: 0, w: img.page[0], h: img.page[1] } } : pageLayout(W, H, o);
     const content = `q ${imageMatrix(img, rot, lay.box).map(pdfNum).join(' ')} cm /Im0 Do Q`;
     const pageId = pw.alloc(), contId = pw.alloc(), imId = pw.alloc();
     pw.obj(imId, `<< /Type /XObject /Subtype /Image /Width ${img.w} /Height ${img.h} /ColorSpace ${cs} /BitsPerComponent ${img.bits || 8} /Filter /${img.filter}${img.parms ? ' /DecodeParms ' + img.parms : ''} /Length ${img.data.length} >>`, img.data);
