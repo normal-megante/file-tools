@@ -34,12 +34,14 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 | `pdf-pages.html` | PDF のページ整理（結合・分割・抜き出し・並べ替え・回転・削除、画像も1ページとして入れられる、元に戻す） |
 | `pdf-to-image.html` | PDF → 画像（JPEG / PNG / WebP、100〜300 dpi、全部か選んだページだけ、回転、1枚ずつか ZIP） |
 | `pdf-compress.html` | PDF の圧縮（ふつう：写真だけ縮める／強力：ページごと画像に。強さ3段階、いくつでも、1つずつか ZIP） |
+| `pdf-write.html` | PDF に書き込み（文字・日付・✓○×・白塗り・手書き。選んで移動・大きさ変更・削除・元に戻す、表示の拡大。道具ごとに注意書き） |
 | `css/common.css` | 全ページ共通の見た目 |
 | `js/common.js` | 共通の部品（ファイル受け取り、画像一覧 `ImageList`、縮小 `downscale`、ZIP 作成、保存・共有など） |
 | `js/pdf.js` | PDF 作成の共通部品（`buildPdf`、JPEG そのまま埋め込み、Flate 圧縮、白黒 1 ビット `bitonalFromCanvas`、用紙の配置） |
 | `js/scan.js` | スキャン補正の計算（`Scan.detectDocument` 四隅検出、`paperAspect` 紙の縦横比、`warpQuad` まっすぐ補正、`enhance` 影消し・線くっきり）。画面に依存しないので Node でもテストできる |
-| `js/pdfdoc.js` | PDF を読んでページを組み替える（`PdfDoc.open(bytes, {password})` → `doc.numPages`、`PdfDoc.writePages([{doc, index, rotate}])`）。こわれた PDF の立て直し、保護 PDF の解除（RC4・AES-128・AES-256、パスワードも可）。圧縮用に、画像の表示される大きさ `imageUsage` と、文書を丸ごと書き直す `rewrite`。Node でもテストできる |
+| `js/pdfdoc.js` | PDF を読んでページを組み替える（`PdfDoc.open(bytes, {password})` → `doc.numPages`、`PdfDoc.writePages([{doc, index, rotate}])`）。こわれた PDF の立て直し、保護 PDF の解除（RC4・AES-128・AES-256、パスワードも可）。圧縮用に、画像の表示される大きさ `imageUsage` と、文書を丸ごと書き直す `rewrite`（`pageEdits` でページに書き足せる）。Node でもテストできる |
 | `js/pdfshrink.js` | PDF の圧縮（`PdfShrink.compress(doc)` 写真だけ縮める、`PdfShrink.rasterize(pdf.js の doc)` ページごと画像に） |
+| `js/pdfwrite.js` | PDF に書き込む部品（`PdfWrite.build(doc, pages, items)` で保存、画面と保存で同じ形を描く `drawText` / `textLayout` / `shape` / `svgPath`） |
 | `js/pdfview.js` | pdf.js を使う共通部品（`PdfView.open` / `close`、ページを canvas に描く `renderPage`、カードの見本 `thumb`、紙の名前 `paperName`、見えているカードだけ順に描く `ThumbQueue`）。ページのカードの見た目（`.card.page`、`.selbar`）は `common.css` |
 | `vendor/pdfjs/` | pdf.js 6.4.299（PDF の表示部品。中身は書き換えない。説明は中の README.md） |
 | `js/qrcode.js` | QR コードの作成（自作。Node でもテストできる形） |
@@ -53,7 +55,8 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 - 縮小は半分ずつ段階的に（`downscale`）。一気に縮めると線がギザギザになる。
 - 画像の編集情報は `{ rot, flip, crop }`。適用順は「回転 → 反転 → 切り抜き」。`crop` は 0〜1 の割合。
 - `sw.js` の `CACHE` 名と `PRECACHE` 一覧は、ファイルを増やしたら更新する。
-- 設定は `localStorage` に保存（`img2pdf-settings-v1`、`image-convert-settings-v1`、`qr-settings-v1`、`scan-settings-v1`、`pdf-pages-settings-v1`、`pdf-image-settings-v1`、`pdf-compress-settings-v1`）。QR の入力内容は保存しない。
+- 設定は `localStorage` に保存（`img2pdf-settings-v1`、`image-convert-settings-v1`、`qr-settings-v1`、`scan-settings-v1`、`pdf-pages-settings-v1`、`pdf-image-settings-v1`、`pdf-compress-settings-v1`、`pdf-write-settings-v1`）。QR の入力内容は保存しない。
+- 注意点（制限・落とし穴）は、その機能のすぐそばに短く書く（ユーザーの希望）。まとめて遠くに書かない。
 
 ### PDF のページ整理（`js/pdfdoc.js` と pdf.js）
 
@@ -76,6 +79,18 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 - `rewrite` は Root と Info からたどれるものだけを書く（使われていないもの・古い版・Thumb・PieceInfo は入れない）。圧縮されていないストリームは Flate、ほかはオブジェクトストリーム＋ xref ストリームにまとめる。保護は外れる。
 - 強力：pdf.js でページを描いて JPEG にし、`buildPdf` に `img.page = [幅, 高さ]` を渡して元のページの大きさのまま入れる。
 - テスト：PyMuPDF で写真・図（PNG）・透明つき・パレット・グレー・CMYK・フォームの中の画像・インライン画像・しおり・リンク・フォーム欄・パスワードつきの PDF を作り、Node で `rewrite`（文字・リンク・しおり・フォーム・見た目が元と同じ）、ブラウザで圧縮した結果を PyMuPDF で確かめた（画像が目標の dpi になっているか、見た目の差）。ブラウザの出力は、作業用フォルダで動かした受け取り専用の小さなサーバー（別ポート）に送って調べた。
+
+### PDF に書き込み（`js/pdfwrite.js` と `PdfDoc.rewrite` の `pageEdits`）
+
+- 書き込んだもの（items）は「画面で見えている向きのページ」の pt 座標で持つ（左上が原点、下が +y。回転・切り抜き（CropBox）を当てたあと）。保存のときは、pdf.js の `getViewport({scale:1}).transform` の逆行列を `cm` にして、そのまま描く。
+- ページの中身は `[q][元の中身…][Q][書き足す中身]` にする（元の中身が座標を変えたまま終わっても、ずれない）。リソース（XObject・Font）は写しを作って足す（ほかのページと共有していることがあるため）。名前は乱数つきで、元の名前とぶつからないようにする。新しく足すオブジェクトは `PdfDoc.types.PNew` で包むか `PStream` のまま入れれば、書き出すときに番号がつく（同じものは1回だけ）。
+- 文字は「見た目の画像（1pt あたり 4 画素＝288 dpi、色は一色＋形は透明度 SMask）」＋「検索・コピー用の見えない文字（`3 Tr`）」。見えない文字はフォント本体を入れない日本語の標準フォント（`HeiseiKakuGo-W5`、`UniJIS-UCS2-H`）＋ ToUnicode。字の幅は 1000 として、行の幅を `Tz` で画像の文字に合わせる。どの端末でも見た目が同じで、フォントを入れなくて済む（そのかわり、保存後はほかのアプリで文字を直せない）。
+- 画面の表示と保存は同じ関数（`textLayout` / `drawText`、記号・手書きは `shape`）で描くので、見たとおりに保存される。ゴシックは Windows では「Yu Gothic Medium」（Yu Gothic UI はかながつまって書類に向かない）。明朝のない端末（スマホ）では明朝を選べないようにする。
+- 記号（✓○×）と手書きは線（図形）で描く。手書きは点の間を曲線でなめらかにつなぐ。白塗りは白い四角で、下の文字はデータに残る（画面に注意書きを出す）。
+- 入力欄（フォーム）や注釈はページの中身の上に描かれるので、重なると書いたものが隠れる（AcroForm があれば注意書きを出す）。
+- 操作：タップで置く（スクロールと区別するため、指を離したときに動いていなければ置く）。選んだものはドラッグで移動、右下の丸で大きさ（文字は文字の大きさ、手書きは縦横比そのまま）、上の × で削除。手書き・白塗りのあいだは1本指でスクロールしないので、2本指でスクロールできるようにした。元に戻すは、変える前の items を JSON で 60 回分。
+- スマホで文字を入力するとき、`pointerdown` で `preventDefault` しないと、指を離したあとに来るマウスの代わりのイベントで入力欄がすぐ閉じる。
+- テスト：PyMuPDF で回転 4 種・切り抜き・切り抜き＋回転・q/Q の釣り合わない中身・Resources を親から受け継ぐ／Contents が配列／原点が 0 でないページを作り、ほかのテスト PDF（保護・パスワード・こわれたもの・日本語・フォーム）とあわせて、ブラウザで書き込んで保存 → PyMuPDF で「書き込んだ所以外は元と 1 画素も変わらない」「白塗りの所は白い」「記号・文字・手書きが決めた所に決めた色で出る」「見えない文字が取り出せて位置が合う」ことを確かめた。pdf.js でも見えない文字の位置が合うことを確かめた。
 
 ### スキャン補正（`js/scan.js`）
 
@@ -107,7 +122,11 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
       - 確認済み：テスト PDF（日本語・保護・パスワードつき・こわれたもの・回転・いろいろな紙の大きさ）で、書き出した画像の縦横のピクセル数が計算どおり、白紙でないこと、名前のつけ方（1つの PDF なら「名前_01」、いくつもなら「元の名前_01」）。ページ整理も共通部品に移したあと、見本・プレビュー・保存を確認し直した。
    3. ✅ **PDF の圧縮**（2026-11-05）：ふつう（文字・しおり・リンク・フォームはそのまま、写真だけを表示される大きさ × 200 / 150 / 100 dpi に縮める）／強力（ページを丸ごと画像に）。いくつでも、1つずつか ZIP。パスワードつき PDF も使える（このとき `PdfDoc` もパスワードに対応した）。
       - 確認済み：画像の多いテスト PDF が 7.3 MB → 1.3 MB（ふつう）／ 0.3 MB（強力）。圧縮なしの PDF は 17.9 MB → 1.4 MB。書き直した PDF の文字・リンク・しおり・フォーム・タイトルが元と同じこと、画像が目標の dpi になっていること、見た目の差が小さいこと。ページ整理のテストも通ることを確認し直した。
-   4. ⬜ **書き込み**（文字・手書き・チェック・日付・白塗り・ハンコやサインの画像）
+   4. **書き込み**
+      - ✅ **前半**（2026-11-05）：文字（黒・赤・青、大きさ4段階＋自由、ゴシック・明朝、改行）、日付（2026/11/05・2026年11月5日・令和8年11月5日）、✓○×、白塗り、手書き（太さ3段階）。選んで移動・大きさ変更・削除・色などの変更、元に戻す、表示の拡大（100〜300%）。元の文字・しおり・リンク・フォームはそのまま、上に書き足して「元の名前_書き込み.pdf」で保存。パスワードつき PDF も使える。
+        - 確認済み：テスト PDF 11 種（回転・切り抜き・保護・こわれたものなど）で、書き込んだ所以外は元と同じ、位置と色が正しい、見えない文字が PyMuPDF と pdf.js で取り出せて位置が合う。画面の操作（置く・入力・書き直し・移動・大きさ・削除・元に戻す・2本指スクロール・拡大）、スマホ幅で横にはみ出さないこと。ページ整理・圧縮のテストも通ることを確認し直した。
+        - 未確認：実機のスマホでの操作感（指で置く・キーボードが出るか・手書き）。
+      - ⬜ **後半**：ハンコ・サイン（画像を貼る＋白い背景を自動で透明に、手書きサインを保存して何度も使う、名字から赤い丸の印鑑を作る）
 4. ⬜ **変換（PC のみ）**：Web ページ → PDF、Office → PDF、PDF → Word など（Python ツール）。
 
 ### あとから増えた希望（順番は未定。2026-11-05）

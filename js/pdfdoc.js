@@ -16,6 +16,7 @@ class PStr { constructor(b, hex) { this.b = b; this.hex = hex; } }
 class PStream { constructor(dict, data) { this.dict = dict; this.data = data; } }
 class PKw { constructor(k) { this.k = k; } }      // キーワード（obj, endobj, R など）
 class ORef { constructor(id) { this.id = id; } }  // 書き出す側の参照
+class PNew { constructor(v) { this.v = v; } }     // 新しく足すオブジェクト（書き出すときに番号をつける。同じものは1回だけ）
 
 class PdfError extends Error { constructor(code, msg) { super(msg || code); this.code = code; } }
 
@@ -1003,15 +1004,46 @@ async function deflate(data) {
 }
 const DROP_KEYS = new Set(['PieceInfo', 'Thumb']); // アプリ専用のデータ・ページの見本（表示には使わない）
 
+// ページに書き足す（PDF に書き込み用）。元の中身を q … Q で囲んでから、足す中身を後ろにつなぐ
+//   ed：{ content: Uint8Array（ページの命令）, resources: { XObject: Map(名前 → 画像), Font: Map(名前 → フォント) } }
+async function editedPage(doc, pg, ed) {
+  const d = new Map(pg.dict);
+  const res0 = await doc.get(d.has('Resources') ? d.get('Resources') : pg.inh.Resources);
+  const res = new Map(res0 instanceof Map ? res0 : []); // ほかのページと共有しているかもしれないので写しを作る
+  for (const [key, add] of Object.entries(ed.resources || {})) {
+    if (!add || !add.size) continue;
+    const cur = await doc.get(res.get(key)), sub = new Map(cur instanceof Map ? cur : []);
+    for (const [n, v] of add) sub.set(n, v);
+    res.set(key, sub);
+  }
+  d.set('Resources', res);
+  const c = d.get('Contents');
+  let list = [];
+  if (Array.isArray(c)) list = c;
+  else if (c instanceof PRef) { const o = await doc.get(c); list = Array.isArray(o) ? o : o instanceof PStream ? [c] : []; }
+  const st = s => new PStream(new Map(), typeof s === 'string' ? enc(s) : s);
+  d.set('Contents', list.length ? [st('q\n'), ...list, st('\nQ\n'), st(ed.content)] : [st(ed.content)]);
+  return d;
+}
+
 // しおり・リンク・フォーム・タグなどはそのまま、文書全体を書き直す。
 //   replace：元の番号 → 差し替える PStream（縮めた画像）
+//   pageEdits：ページ番号（0 から）→ 書き足すもの（editedPage を参照）
 //   ・使われていないオブジェクトや、追記で古くなった版は入れない
 //   ・圧縮されていないストリームは Flate で圧縮、ストリーム以外の小さなオブジェクトはまとめて圧縮（オブジェクトストリーム）
 //   ・保護（暗号化）は外れる
 // 返り値は Blob（application/pdf）
-async function rewrite(doc, { replace = new Map(), onProgress } = {}) {
-  const map = new Map(), queue = [], plain = [], parts = [], offsets = new Map();
+async function rewrite(doc, { replace = new Map(), pageEdits = null, onProgress } = {}) {
+  const map = new Map(), newIds = new Map(), queue = [], plain = [], parts = [], offsets = new Map();
   let nextId = 1, pos = 0;
+  if (pageEdits && pageEdits.size) {
+    replace = new Map(replace);
+    for (const [i, ed] of pageEdits) {
+      const pg = doc.pageList[i];
+      if (!pg || !pg.ref) throw new PdfError('unsupported', 'このページには書き込めません');
+      replace.set(pg.ref.num, await editedPage(doc, pg, ed));
+    }
+  }
   const alloc = () => nextId++;
   const raw = x => { const u = typeof x === 'string' ? enc(x) : x; parts.push(u); pos += u.length; };
   const writeStream = (id, dict, data) => {
@@ -1022,6 +1054,11 @@ async function rewrite(doc, { replace = new Map(), onProgress } = {}) {
     if (v instanceof PRef) {
       let id = map.get(v.num);
       if (id === undefined) { id = alloc(); map.set(v.num, id); queue.push([v.num, id]); }
+      return new ORef(id);
+    }
+    if (v instanceof PNew || v instanceof PStream) { // 新しく足すもの（ストリームは必ず別オブジェクトにする決まり）
+      let id = newIds.get(v);
+      if (id === undefined) { id = alloc(); newIds.set(v, id); queue.push([null, id, v instanceof PNew ? v.v : v]); }
       return new ORef(id);
     }
     if (Array.isArray(v)) return v.map(copy);
@@ -1037,8 +1074,8 @@ async function rewrite(doc, { replace = new Map(), onProgress } = {}) {
   const root = top(doc.trailer.get('Root')), info = doc.trailer.has('Info') ? top(doc.trailer.get('Info')) : null;
   let done = 0;
   while (queue.length) {
-    const [num, id] = queue.shift();
-    const v = replace.has(num) ? replace.get(num) : await doc.getObj(num);
+    const [num, id, nv] = queue.shift();
+    const v = num === null ? nv : replace.has(num) ? replace.get(num) : await doc.getObj(num);
     if (v instanceof PStream) {
       const src = new Map(v.dict); src.delete('Length'); // 長さは書き直すので、別オブジェクトの長さは引き込まない
       const d = copy(src);
@@ -1085,7 +1122,7 @@ async function rewrite(doc, { replace = new Map(), onProgress } = {}) {
 
 return {
   open, writePages, rewrite, imageUsage, decodeStream, PdfError,
-  types: { PName, PRef, PStr, PStream },
+  types: { PName, PRef, PStr, PStream, PNew },
   _test: { md5, rc4, aesCbcDecrypt, aesCbcEncrypt, Parser },
 };
 })();
