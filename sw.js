@@ -10,7 +10,8 @@
 // ※ ツールのファイルを新しく足したら、下の PRECACHE にも書き足してください。
 // =========================================================
 
-const CACHE = 'file-tools-v8';   // しまっておく入れ物の名前
+const CACHE = 'file-tools-v9';   // しまっておく入れ物の名前
+const SHARE_INBOX = 'share-inbox'; // スマホの「共有」で届いた画像を、ページが受け取るまで一時的に置く所（古い入れ物の片付けでは消さない）
 const NETWORK_TIMEOUT = 4000;    // ネットの返事をこれだけ（ミリ秒）待ち、来なければしまってある分を使う
 
 // 最初にまとめてしまっておくファイル
@@ -20,6 +21,7 @@ const PRECACHE = [
   'image-to-pdf.html',
   'image.html',
   'qr.html',
+  'qr-read.html',
   'scan.html',
   'pdf-pages.html',
   'pdf-to-image.html',
@@ -30,6 +32,7 @@ const PRECACHE = [
   'css/common.css',
   'js/common.js',
   'js/qrcode.js',
+  'js/qrread.js',
   'js/pdf.js',
   'js/pdfdoc.js',
   'js/pdfview.js',
@@ -74,6 +77,12 @@ self.addEventListener('activate', (event) => {
 // ---- ファイルを読み込むたびに ----
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  // スマホの「共有」→「ツール箱」で画像が届いたとき（manifest の share_target）。
+  // 画像をしまってから、QR コード読み取りのページを開き直す（ページがしまった画像を読む）
+  if (request.method === 'POST' && new URL(request.url).pathname.endsWith('/qr-read.html')) {
+    event.respondWith(receiveShare(request));
+    return;
+  }
   // このツール箱のファイルを「見る」ときだけ受け持つ（それ以外はブラウザにおまかせ）
   if (request.method !== 'GET' || !request.url.startsWith(self.registration.scope)) return;
 
@@ -123,6 +132,24 @@ async function findInCache(key, isPage) {
   // ページそのものなら、トップページ（index.html）で代わりにする
   return (await cache.match(self.registration.scope, options))
     ?? cache.match(`${self.registration.scope}index.html`, options);
+}
+
+async function receiveShare(request) {
+  try {
+    const form = await request.formData();
+    const files = form.getAll('image').filter((f) => typeof f === 'object' && f.size > 0).slice(0, 20);
+    const cache = await caches.open(SHARE_INBOX);
+    for (const old of await cache.keys()) await cache.delete(old); // 前の残りは消す
+    let n = 0;
+    for (const f of files) {
+      await cache.put(new Request(`${self.registration.scope}__shared/${n++}`), new Response(f, {
+        headers: { 'Content-Type': f.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(f.name || '共有された画像') },
+      }));
+    }
+  } catch {
+    // 受け取れなくても、ページは開く（ページが「受け取れませんでした」と出す）
+  }
+  return Response.redirect(`${self.registration.scope}qr-read.html?shared`, 303);
 }
 
 function wait(ms) {

@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QRコード読み取り｜ファイルツール箱</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/common.css">
+<style>
+.qrr{max-width:960px}
+.inbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.inbtns .btn{padding:8px 14px}
+.cam{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;box-shadow:var(--shadow)}
+.camview{position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:4/3;max-height:65vh;margin:0 auto}
+.camview video{width:100%;height:100%;object-fit:cover;display:block}
+.camview video.mirror{transform:scaleX(-1)}
+.camview .guide{position:absolute;left:50%;top:50%;height:66%;aspect-ratio:1;transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.9);border-radius:16px;box-shadow:0 0 0 2000px rgba(0,0,0,.28);pointer-events:none}
+.camrow{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.camrow .status{flex:1;min-width:12em;font-weight:600}
+.shot{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);margin-top:14px;overflow:hidden}
+.shot-head{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 14px;border-bottom:1px solid var(--line)}
+.shot-head .name{flex:1;min-width:0;font-weight:600}
+.shot-head .sub{white-space:nowrap}
+.shot-body{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:14px;padding:12px}
+@media (max-width:640px){.shot-body{grid-template-columns:1fr}}
+.shot-body.wait{display:flex;align-items:center;gap:10px;color:var(--muted)}
+.pic{background:var(--thumb-bg);border-radius:10px;display:flex;align-items:center;justify-content:center;padding:8px;align-self:start}
+.pic canvas{display:block;max-width:100%;max-height:360px;width:auto;height:auto;background:#fff}
+.found{display:grid;gap:10px;align-content:start;min-width:0}
+.qcard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-width:0}
+.qcard.joined{border-color:var(--accent)}
+.qhead{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.badge{background:var(--accent);color:var(--accent-text);border-radius:6px;font-size:12px;font-weight:700;padding:0 7px;line-height:20px}
+.kind{font-weight:700}
+.dom{font-size:18px;font-weight:700;word-break:break-all;line-height:1.35}
+.full{font-family:Consolas,"Courier New",monospace;font-size:12.5px;word-break:break-all;color:var(--muted);margin-top:2px}
+.text{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;background:var(--thumb-bg);border-radius:8px;padding:6px 10px;margin:0;font:inherit}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 10px;align-items:center;margin:0}
+.kv dt{color:var(--muted);font-size:13px}
+.kv dd{margin:0;word-break:break-all;font-weight:600;white-space:pre-wrap}
+.kv .btn{padding:2px 10px;font-size:13px}
+.qbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.qbtns .btn{padding:6px 14px}
+.btn.go{background:var(--accent);color:var(--accent-text);border-color:var(--accent);font-weight:600}
+.btn.go:hover{background:var(--accent-hover);color:var(--accent-text)}
+details.raw{margin-top:8px;font-size:12px;color:var(--muted)}
+details.raw summary{cursor:pointer}
+details.raw .text{margin-top:4px;font-size:12px}
+.miss ul{margin:4px 0 0;padding-left:18px}
+</style>
+</head>
+<body>
+<div class="wrap qrr">
+  <header>
+    <a class="back" href="./">← ツール箱にもどる</a>
+    <h1>QRコード読み取り</h1>
+    <p>スクショや写真の中の QR コードを読み取ります。画像はこの端末の中だけで使われ、どこにも送られません。QR コードを作るときは<a href="qr.html">「QRコード作成」</a>へ。</p>
+  </header>
+
+  <div id="drop" class="drop" tabindex="0" role="button" aria-label="画像を追加">
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="4" height="4" rx=".5"/><rect x="13" y="7" width="4" height="4" rx=".5"/><rect x="7" y="13" width="4" height="4" rx=".5"/><path d="M13 13h1.5M16.5 13H17v1.5M13 16.5V17h4"/></svg>
+    <div class="big"><span class="pc-only">スクショを Ctrl + V で貼り付け</span><span class="touch-only">画像を選ぶ</span></div>
+    <div class="muted"><span class="pc-only">または画像をドロップ・クリックして選択（いくつでも）</span><span class="touch-only">スクショや写真（いくつでも）</span></div>
+    <input type="file" id="file" accept="image/*" multiple hidden>
+  </div>
+  <div class="inbtns">
+    <button type="button" class="btn" id="pasteBtn" hidden>コピーした画像を貼り付け</button>
+    <button type="button" class="btn" id="camBtn">カメラで読む</button>
+  </div>
+  <p class="note"><span class="pc-only">画面に出ている QR は、Windows なら <b>Win + Shift + S</b> で QR のまわりを囲んで切り取り、このページで <b>Ctrl + V</b> を押すと読めます。</span><span class="touch-only">スクショは、写真アプリなどの「共有」→「ツール箱」でここに送れます（このツール箱を「ホーム画面に追加」してアプリにしたとき）。</span></p>
+
+  <section class="cam" id="cam" hidden>
+    <div class="camview"><video id="video" playsinline muted></video><div class="guide"></div></div>
+    <div class="camrow">
+      <span class="status" id="camStatus"></span>
+      <button type="button" class="btn" id="camSwitch" hidden>カメラを切り替え</button>
+      <button type="button" class="btn" id="camStop">やめる</button>
+    </div>
+    <p class="note">カメラの映像はこの端末の中だけで使い、保存も送信もしません。読み取れたら自動で止まります。<span class="pc-only">PC のカメラはピントが合いにくいので、QR を近づけすぎず、枠に収まるくらいにうつしてください。</span><span class="touch-only">スマホの標準のカメラアプリでも QR を読めます。</span></p>
+  </section>
+
+  <div class="listbar" id="listbar" hidden>
+    <span id="count"></span>
+    <span class="spacer"></span>
+    <button type="button" class="btn danger" id="clear">すべて消す</button>
+  </div>
+  <div id="results"></div>
+
+  <div class="tips">
+    <b>メモ</b>
+    <ul>
+      <li>読み取った内容は保存しません（ページを閉じると消えます）。</li>
+      <li>1枚の画像に QR がいくつあっても、全部読みます。画像の上の番号が、下の結果の番号です。</li>
+      <li>読めないときは、QR の部分を大きめに切り取ってから入れてみてください。ぼやけている・小さすぎる・一部が隠れている QR は読めません。</li>
+      <li>読み取れるのは QR コードだけです（お店の商品のバーコードなどは読めません）。</li>
+    </ul>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/qrcode.js"></script>
+<script src="js/qrread.js"></script>
+<script>
+'use strict';
+const MAX_SIDE = 4096; // これより大きな画像は縮めて読む（メモリと時間のため）
+let queue = Promise.resolve(), detector = null, pasteNo = 0;
+
+// Android の Chrome などに入っている QR の読み取り機能（Windows の PC にはない）。あれば自前の読み取りと合わせて使う
+(async () => {
+  try {
+    if ('BarcodeDetector' in window && (await BarcodeDetector.getSupportedFormats()).includes('qr_code')) detector = new BarcodeDetector({ formats: ['qr_code'] });
+  } catch (e) { detector = null; }
+})();
+
+/* ---------- 小さな部品 ---------- */
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const k of kids) if (k != null && k !== false) e.append(k); // 文字は textContent として入る（安全）
+  return e;
+}
+async function copyText(t, msg = 'コピーしました') {
+  try { await navigator.clipboard.writeText(t); toast(msg); return; } catch (e) { /* 下の方法で */ }
+  const ta = el('textarea', { style: 'position:fixed;opacity:0;left:0;top:0' });
+  ta.value = t; document.body.appendChild(ta); ta.select();
+  try { toast(document.execCommand('copy') ? msg : 'コピーできませんでした'); } catch (e) { toast('コピーできませんでした'); }
+  ta.remove();
+}
+const copyBtn = (t, label = 'コピー') => el('button', { type: 'button', class: 'btn', onclick: () => copyText(t) }, label);
+const linkBtn = (href, label, newTab) => el('a', { class: 'btn go', href, target: newTab ? '_blank' : null, rel: newTab ? 'noopener noreferrer' : null }, label);
+const saveBtn = (make, label) => el('button', { type: 'button', class: 'btn go', onclick: () => { const [blob, name] = make(); saveBlob(blob, name); } }, label);
+const note = (text, cls = 'note') => el('p', { class: cls }, text);
+// 見出しと値の表。rows: [見出し, 値, コピーするか]
+function kv(rows) {
+  const dl = el('dl', { class: 'kv' });
+  for (const [k, v, copy] of rows) {
+    if (v == null || v === '') continue;
+    dl.append(el('dt', {}, k), el('dd', {}, v), copy ? copyBtn(v) : el('span'));
+  }
+  return dl;
+}
+const rawBox = text => el('details', { class: 'raw' }, el('summary', {}, '元の文字を見る'), el('pre', { class: 'text' }, text), el('div', { class: 'qbtns' }, copyBtn(text, '元の文字をコピー')));
+const fileName = (s, fallback) => (sanitize(s || '').replace(/\s+/g, '_').slice(0, 40) || fallback);
+
+/* ---------- 中身の読み分け（URL・Wi-Fi・連絡先など） ---------- */
+// 「キー:値;キー:値;;」の形（Wi-Fi・MECARD・MATMSG）。\ のあとの文字はそのまま
+function fields(body) {
+  const out = [];
+  let cur = '', esc = false;
+  const push = () => {
+    if (!cur) return;
+    let k = '', v = '', i = 0, e2 = false;
+    for (; i < cur.length; i++) { const c = cur[i]; if (!e2 && c === ':') break; e2 = !e2 && c === '\u0000'; }
+    k = cur.slice(0, i); v = cur.slice(i + 1);
+    out.push([k.replace(/\u0000/g, '').toUpperCase(), v.replace(/\u0000([\s\S])/g, '$1')]);
+    cur = '';
+  };
+  for (const c of body) {
+    if (esc) { cur += '\u0000' + c; esc = false; } else if (c === '\\') esc = true; else if (c === ';') push(); else cur += c;
+  }
+  push();
+  return out;
+}
+const field = (f, k) => { const e = f.find(([kk]) => kk === k); return e ? e[1] : ''; };
+const fieldAll = (f, k) => f.filter(([kk]) => kk === k).map(([, v]) => v).filter(Boolean);
+
+function decodeQP(v, cs) {
+  const bytes = [];
+  for (let i = 0; i < v.length; i++) {
+    if (v[i] === '=' && /^[0-9A-Fa-f]{2}$/.test(v.substr(i + 1, 2))) { bytes.push(parseInt(v.substr(i + 1, 2), 16)); i += 2; }
+    else bytes.push(v.charCodeAt(i) & 255);
+  }
+  try { return new TextDecoder(cs || 'utf-8').decode(Uint8Array.from(bytes)); } catch (e) { return new TextDecoder().decode(Uint8Array.from(bytes)); }
+}
+// ; で区切る（\; は区切りにしない）
+const splitEsc = (s, sep) => s.split(new RegExp(`(?<!\\\\)\\${sep}`)).map(p => p.replace(/\\n/gi, '\n').replace(/\\([\\,;:])/g, '$1'));
+const unesc = s => s.replace(/\\n/gi, '\n').replace(/\\([\\,;:])/g, '$1');
+
+function parseVcard(text) {
+  let t = text.replace(/\r\n?/g, '\n');
+  if (/QUOTED-PRINTABLE/i.test(t)) t = t.replace(/=\n/g, '');
+  const c = { last: '', first: '', name: '', kana: '', kanaLast: '', kanaFirst: '', tel: [], email: [], url: [], adr: [], org: '', title: '', note: '' };
+  for (const line of t.replace(/\n[ \t]/g, '').split('\n')) {
+    const i = line.indexOf(':');
+    if (i < 0) continue;
+    const params = line.slice(0, i).split(';'), key = params[0].replace(/^item\d+\./i, '').toUpperCase();
+    let v = line.slice(i + 1);
+    if (params.some(p => /QUOTED-PRINTABLE/i.test(p))) v = decodeQP(v, ((params.find(p => /^CHARSET=/i.test(p)) || '').split('=')[1] || '').toLowerCase());
+    if (key === 'FN') c.name = unesc(v);
+    else if (key === 'N') { const p = splitEsc(v, ';'); c.last = p[0] || ''; c.first = p[1] || ''; }
+    else if (key === 'X-PHONETIC-LAST-NAME') c.kanaLast = unesc(v);
+    else if (key === 'X-PHONETIC-FIRST-NAME') c.kanaFirst = unesc(v);
+    else if (key === 'SOUND') { const p = splitEsc(v, ';'); c.kanaLast = c.kanaLast || p[0] || ''; c.kanaFirst = c.kanaFirst || p[1] || ''; }
+    else if (key === 'TEL') c.tel.push(unesc(v));
+    else if (key === 'EMAIL') c.email.push(unesc(v));
+    else if (key === 'URL') c.url.push(unesc(v));
+    else if (key === 'ADR') c.adr.push(splitEsc(v, ';').filter(Boolean).join(' '));
+    else if (key === 'ORG') c.org = splitEsc(v, ';').filter(Boolean).join(' ');
+    else if (key === 'TITLE') c.title = unesc(v);
+    else if (key === 'NOTE') c.note = unesc(v);
+  }
+  if (!c.name) c.name = [c.last, c.first].filter(Boolean).join(' ');
+  c.kana = [c.kanaLast, c.kanaFirst].filter(Boolean).join(' ');
+  return c;
+}
+function parseMecard(body) {
+  const f = fields(body), n = field(f, 'N').split(','), s = field(f, 'SOUND').split(',');
+  return {
+    last: n[0] || '', first: n[1] || '', name: n.filter(Boolean).join(' '), kana: s.filter(Boolean).join(' '), kanaLast: s[0] || '', kanaFirst: s[1] || '',
+    tel: fieldAll(f, 'TEL'), email: fieldAll(f, 'EMAIL'), url: fieldAll(f, 'URL'), adr: fieldAll(f, 'ADR'),
+    org: field(f, 'ORG'), title: '', note: field(f, 'NOTE'),
+  };
+}
+// 保存用の連絡先ファイル（vCard 3.0、UTF-8）
+function buildVcard(c) {
+  const e = s => s.replace(/([\\,;])/g, '\\$1').replace(/\r?\n/g, '\\n');
+  const L = ['BEGIN:VCARD', 'VERSION:3.0', `N:${e(c.last || (c.first ? '' : c.name))};${e(c.first)};;;`, `FN:${e(c.name || '連絡先')}`];
+  // よみがな（Android・iPhone の連絡先が使う書き方）
+  if (c.kanaLast) L.push(`X-PHONETIC-LAST-NAME:${e(c.kanaLast)}`);
+  if (c.kanaFirst) L.push(`X-PHONETIC-FIRST-NAME:${e(c.kanaFirst)}`);
+  if (c.org) L.push(`ORG:${e(c.org)}`);
+  if (c.title) L.push(`TITLE:${e(c.title)}`);
+  for (const t of c.tel) L.push(`TEL:${e(t)}`);
+  for (const m of c.email) L.push(`EMAIL:${e(m)}`);
+  for (const u of c.url) L.push(`URL:${e(u)}`);
+  for (const a of c.adr) L.push(`ADR:;;${e(a)};;;;`);
+  if (c.note) L.push(`NOTE:${e(c.note)}`);
+  L.push('END:VCARD');
+  return L.join('\r\n') + '\r\n';
+}
+function parseEvent(text) {
+  const ev = {};
+  for (const line of text.replace(/\r\n?/g, '\n').replace(/\n[ \t]/g, '').split('\n')) {
+    const i = line.indexOf(':');
+    if (i < 0) continue;
+    const key = line.slice(0, i).split(';')[0].toUpperCase();
+    if (['SUMMARY', 'DTSTART', 'DTEND', 'LOCATION', 'DESCRIPTION'].includes(key) && !ev[key]) ev[key] = unesc(line.slice(i + 1));
+  }
+  return ev;
+}
+function fmtIcsDate(s) {
+  const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2}))?(Z?)/.exec(s || '');
+  if (!m) return s || '';
+  return `${m[1]}/${m[2]}/${m[3]}` + (m[4] ? ` ${m[4]}:${m[5]}` : '') + (m[6] ? '（世界標準時）' : '');
+}
+const safeDecode = s => { try { return decodeURIComponent(s); } catch (e) { return s; } };
+
+function classify(text) {
+  const t = text.trim();
+  if (/^https?:\/\/\S+$/i.test(t)) { try { return { kind: 'url', url: new URL(t) }; } catch (e) { /* 文章として */ } }
+  if (/^WIFI:/i.test(t)) return { kind: 'wifi', f: fields(t.slice(5)) };
+  if (/^BEGIN:VCARD/i.test(t)) return { kind: 'contact', c: parseVcard(t) };
+  if (/^MECARD:/i.test(t)) return { kind: 'contact', c: parseMecard(t.slice(7)) };
+  if (/BEGIN:VEVENT/i.test(t)) return { kind: 'event', e: parseEvent(t) };
+  if (/^tel:/i.test(t)) return { kind: 'tel', num: safeDecode(t.slice(4)).trim() };
+  if (/^mailto:/i.test(t)) {
+    const q = t.indexOf('?'), to = safeDecode(t.slice(7, q < 0 ? undefined : q)), p = new URLSearchParams(q < 0 ? '' : t.slice(q + 1));
+    return { kind: 'mail', to, sub: p.get('subject') || '', body: p.get('body') || '' };
+  }
+  if (/^MATMSG:/i.test(t)) { const f = fields(t.slice(7)); return { kind: 'mail', to: field(f, 'TO'), sub: field(f, 'SUB'), body: field(f, 'BODY') }; }
+  let m = /^(?:smsto|mmsto):([^:]*):?([\s\S]*)$/i.exec(t);
+  if (m) return { kind: 'sms', num: m[1].trim(), body: m[2] };
+  m = /^(?:sms|mms):([^?]*)(?:\?([\s\S]*))?$/i.exec(t);
+  if (m) return { kind: 'sms', num: safeDecode(m[1]).trim(), body: new URLSearchParams(m[2] || '').get('body') || '' };
+  m = /^geo:(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/i.exec(t);
+  if (m) return { kind: 'geo', lat: m[1], lng: m[2] };
+  return { kind: 'text' };
+}
+const KIND_LABEL = { url: 'URL（ウェブサイト）', wifi: 'Wi-Fi', contact: '連絡先', event: '予定', tel: '電話番号', mail: 'メール', sms: 'SMS（ショートメッセージ）', geo: '場所', text: '文章' };
+
+/* ---------- 結果のカード ---------- */
+function makeCard(no, r) {
+  const text = r.text, k = classify(text);
+  const card = el('div', { class: 'qcard' + (r.joined ? ' joined' : '') });
+  card.append(el('div', { class: 'qhead' },
+    el('span', { class: 'badge' }, r.joined ? 'つなげた文' : String(no)),
+    el('span', { class: 'kind' }, KIND_LABEL[k.kind]),
+    r.sa && !r.joined ? el('span', { class: 'small muted' }, `分割された QR の ${r.sa.index + 1} / ${r.sa.total} 番目`) : null,
+    r.joined ? el('span', { class: 'small muted' }, `分割された QR ${r.joined} 個を、順番につなげました`) : null));
+
+  if (k.kind === 'url') {
+    const u = k.url, warns = [];
+    card.append(el('div', { class: 'small muted' }, '行き先'), el('div', { class: 'dom' }, u.hostname), el('div', { class: 'full' }, text.trim()));
+    if (u.username || u.password) warns.push('アドレスに「@」が入っています。@ より前は行き先ではありません。本当の行き先は上の太字です。');
+    if (/(^|\.)xn--/i.test(u.hostname)) warns.push('日本語などの文字を使ったアドレス（国際化ドメイン）です。有名なサイトに見た目を似せた偽サイトのことがあるので、特に注意してください。');
+    if (u.protocol === 'http:') warns.push('暗号化されていない（http の）サイトです。パスワードやカード番号は入れないでください。');
+    for (const w of warns) card.append(note('⚠ ' + w, 'warn'));
+    card.append(el('div', { class: 'qbtns' }, linkBtn(u.href, '開く', true), copyBtn(text.trim())));
+    card.append(note('QR コードから偽のサイトに誘う詐欺があります。開く前に、上の「行き先」が正しいか確かめてください。'));
+  } else if (k.kind === 'wifi') {
+    const f = k.f, sec = field(f, 'T').toUpperCase(), pass = field(f, 'P');
+    card.append(kv([
+      ['ネットワーク名', field(f, 'S'), true],
+      ['パスワード', sec === 'NOPASS' || !pass ? 'なし' : pass, !!pass && sec !== 'NOPASS'],
+      ['暗号化', sec === 'WPA' || sec === 'WPA2' || sec === 'WPA3' || sec === 'SAE' ? 'WPA / WPA2 / WPA3' : sec === 'WEP' ? 'WEP（古い方式）' : sec === 'NOPASS' || !sec ? 'なし' : sec],
+      ['見えない設定', /^true$/i.test(field(f, 'H')) ? 'あり（ステルス。一覧に出ないので名前を入れてつなぐ）' : ''],
+    ]));
+    card.append(note('ブラウザからは Wi-Fi に自動でつなげません。パスワードをコピーして、端末の Wi-Fi の設定画面で貼り付けてください。'));
+    card.append(el('p', { class: 'note' }, el('span', { class: 'touch-only' }, 'Android の標準のカメラで読むと、そのままつなげます。')));
+    card.append(rawBox(text));
+  } else if (k.kind === 'contact') {
+    const c = k.c;
+    card.append(kv([
+      ['名前', c.name, true], ['よみ', c.kana], ['会社・学校', c.org, true], ['役職', c.title],
+      ...c.tel.map(t => ['電話', t, true]), ...c.email.map(m => ['メール', m, true]), ...c.url.map(u => ['URL', u, true]),
+      ...c.adr.map(a => ['住所', a, true]), ['メモ', c.note],
+    ]));
+    card.append(el('div', { class: 'qbtns' }, saveBtn(() => [new Blob([buildVcard(c)], { type: 'text/vcard' }), fileName(c.name, '連絡先') + '.vcf'], '連絡先ファイル（.vcf）で保存')));
+    card.append(note('保存したファイルを開くと、連絡先に追加できます（スマホでは「連絡先」のアプリを選びます）。'));
+    card.append(rawBox(text));
+  } else if (k.kind === 'event') {
+    const e = k.e;
+    card.append(kv([['予定', e.SUMMARY, true], ['始まり', fmtIcsDate(e.DTSTART)], ['終わり', fmtIcsDate(e.DTEND)], ['場所', e.LOCATION, true], ['メモ', e.DESCRIPTION]]));
+    const ics = () => {
+      let body = text.trim().replace(/\r?\n/g, '\r\n');
+      // カレンダーのアプリによっては、予定の番号（UID）と作った日時（DTSTAMP）がないと読み込めない
+      const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+      if (!/^UID:/im.test(body)) body = body.replace(/BEGIN:VEVENT\r\n/i, m => `${m}UID:${stamp}-${Math.random().toString(36).slice(2)}@file-tools\r\n`);
+      if (!/^DTSTAMP:/im.test(body)) body = body.replace(/BEGIN:VEVENT\r\n/i, m => `${m}DTSTAMP:${stamp}\r\n`);
+      if (!/BEGIN:VCALENDAR/i.test(body)) body = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//file-tools//QR//JA\r\n${body}\r\nEND:VCALENDAR`;
+      return [new Blob([body + '\r\n'], { type: 'text/calendar' }), fileName(e.SUMMARY, '予定') + '.ics'];
+    };
+    card.append(el('div', { class: 'qbtns' }, saveBtn(ics, '予定ファイル（.ics）で保存')));
+    card.append(note('保存したファイルを開くと、カレンダーに追加できます。'));
+    card.append(rawBox(text));
+  } else if (k.kind === 'tel') {
+    card.append(kv([['電話番号', k.num]]));
+    card.append(el('div', { class: 'qbtns' }, linkBtn('tel:' + k.num.replace(/[^\d+#*,;pw]/gi, ''), '電話をかける'), copyBtn(k.num)));
+  } else if (k.kind === 'mail') {
+    card.append(kv([['宛先', k.to, true], ['件名', k.sub], ['本文', k.body]]));
+    const q = [k.sub && 'subject=' + encodeURIComponent(k.sub), k.body && 'body=' + encodeURIComponent(k.body)].filter(Boolean).join('&');
+    card.append(el('div', { class: 'qbtns' }, linkBtn('mailto:' + encodeURIComponent(k.to).replace(/%40/g, '@') + (q ? '?' + q : ''), 'メールを書く'), k.body ? copyBtn(k.body, '本文をコピー') : null));
+    card.append(note('メールのアプリが開きます。送る前に、宛先と内容を確かめてください。'));
+  } else if (k.kind === 'sms') {
+    card.append(kv([['宛先', k.num, true], ['本文', k.body]]));
+    card.append(el('div', { class: 'qbtns' }, linkBtn('sms:' + k.num.replace(/[^\d+]/g, '') + (k.body ? '?body=' + encodeURIComponent(k.body) : ''), 'SMS を書く'), k.body ? copyBtn(k.body, '本文をコピー') : null));
+    card.append(note('メッセージのアプリが開きます（PC では開けないことがあります）。送る前に、宛先と内容を確かめてください。'));
+  } else if (k.kind === 'geo') {
+    card.append(kv([['緯度・経度', `${k.lat}, ${k.lng}`, true]]));
+    card.append(el('div', { class: 'qbtns' }, linkBtn(`https://www.google.com/maps?q=${encodeURIComponent(k.lat + ',' + k.lng)}`, '地図で開く', true)));
+    card.append(note('Google マップが開きます（場所の数字がマップに送られます）。'));
+    card.append(rawBox(text));
+  } else {
+    card.append(el('pre', { class: 'text' }, text || '（空っぽの QR コードです）'));
+    if (text) card.append(el('div', { class: 'qbtns' }, copyBtn(text)));
+  }
+  return card;
+}
+
+/* ---------- 画像ごとの欄 ---------- */
+function makeBlock(name) {
+  const del = el('button', { type: 'button', class: 'icon del', title: '消す', 'aria-label': '消す' });
+  del.innerHTML = ICON.del;
+  const head = el('div', { class: 'shot-head' }, el('span', { class: 'name' }, name), el('span', { class: 'sub' }, ''), del);
+  const body = el('div', { class: 'shot-body wait' }, el('div', { class: 'spin' }), '読み取り中…');
+  const blk = { el: el('div', { class: 'shot' }, head, body), head, body };
+  head.querySelector('.name').title = name;
+  del.addEventListener('click', () => { blk.el.remove(); refreshList(); });
+  $('#results').prepend(blk.el);
+  refreshList();
+  return blk;
+}
+function refreshList() {
+  const n = $('#results').children.length;
+  $('#listbar').hidden = !n;
+  $('#count').textContent = `画像 ${n} 枚`;
+}
+$('#clear').addEventListener('click', () => { $('#results').replaceChildren(); refreshList(); });
+
+// 見つけた QR の場所に、番号つきの枠を描いた見本
+function drawPicture(src, found) {
+  const s = Math.min(1, 640 / Math.max(src.width, src.height));
+  const c = s < 1 ? downscale(src, Math.max(1, Math.round(src.width * s)), Math.max(1, Math.round(src.height * s)), '#fff') : (() => {
+    const d = newCanvas(src.width, src.height); d.getContext('2d').drawImage(src, 0, 0); return d;
+  })();
+  const x = c.getContext('2d'), lw = Math.max(2, Math.round(Math.max(c.width, c.height) / 160));
+  found.forEach((r, i) => {
+    const p = r.corners.map(q => ({ x: q.x * s, y: q.y * s }));
+    x.lineJoin = 'round';
+    for (const [col, wd] of [['#fff', lw + 3], ['#2f6fed', lw]]) {
+      x.beginPath(); p.forEach((q, j) => (j ? x.lineTo(q.x, q.y) : x.moveTo(q.x, q.y))); x.closePath();
+      x.strokeStyle = col; x.lineWidth = wd; x.stroke();
+    }
+    const cx = p.reduce((a, q) => a + q.x, 0) / 4, cy = p.reduce((a, q) => a + q.y, 0) / 4, rad = Math.max(10, lw * 4);
+    x.beginPath(); x.arc(cx, cy, rad, 0, Math.PI * 2); x.fillStyle = '#2f6fed'; x.fill();
+    x.lineWidth = 2; x.strokeStyle = '#fff'; x.stroke();
+    x.fillStyle = '#fff'; x.font = `700 ${Math.round(rad * 1.15)}px sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(String(i + 1), cx, cy + 1);
+  });
+  return c;
+}
+
+function showResults(blk, canvas, found) {
+  blk.head.querySelector('.sub').textContent = found.length ? `QR コード ${found.length} 個` : '見つかりませんでした';
+  blk.body.className = 'shot-body';
+  blk.body.replaceChildren();
+  blk.body.append(el('div', { class: 'pic' }, drawPicture(canvas, found)));
+  const list = el('div', { class: 'found' });
+  if (!found.length) {
+    list.append(el('div', { class: 'warn miss' }, 'QR コードが見つかりませんでした。',
+      el('ul', {},
+        el('li', {}, 'QR の部分を大きめに切り取ってから、もう一度入れてみてください。'),
+        el('li', {}, 'ぼやけている・小さすぎる・一部が隠れている・ななめすぎる QR は読めません。'),
+        el('li', {}, '写真なら、明るい所で、QR を正面からまっすぐ撮ってください。'))));
+  }
+  // 分割された QR（1つの文を何枚かに分けたもの）がそろっていれば、つなげた文も出す
+  const groups = new Map();
+  for (const r of found) if (r.sa) { const g = groups.get(r.sa.parity) || []; g[r.sa.index] = r; groups.set(r.sa.parity, g); }
+  for (const g of groups.values()) {
+    const total = g.find(Boolean).sa.total;
+    if (g.length === total && g.every(Boolean)) list.append(makeCard(0, { text: g.map(r => r.text).join(''), joined: total }));
+  }
+  found.forEach((r, i) => list.append(makeCard(i + 1, r)));
+  blk.body.append(list);
+}
+
+/* ---------- 読み取り ---------- */
+async function findCodes(c) {
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  const found = QRRead.scan(ctx.getImageData(0, 0, c.width, c.height)).map(r => ({ text: r.text, corners: r.corners, sa: r.sa }));
+  if (detector) {
+    try {
+      for (const d of await detector.detect(c)) {
+        if (d.cornerPoints && d.cornerPoints.length === 4 && !found.some(f => f.text === d.rawValue)) found.push({ text: d.rawValue, corners: d.cornerPoints });
+      }
+    } catch (e) { /* 使えなければ自前の結果だけ */ }
+  }
+  return found;
+}
+async function readFile(file, blk) {
+  try {
+    await wait(30); // 「読み取り中…」を先に表示する
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const s = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+    const W = Math.max(1, Math.round(bmp.width * s)), H = Math.max(1, Math.round(bmp.height * s));
+    let c;
+    if (s < 1) c = downscale(bmp, W, H, '#fff');
+    else {
+      c = newCanvas(W, H);
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.drawImage(bmp, 0, 0); // 透明な所は白に
+    }
+    bmp.close();
+    showResults(blk, c, await findCodes(c));
+    c.width = c.height = 0;
+  } catch (e) {
+    console.error(e);
+    blk.head.querySelector('.sub').textContent = '';
+    blk.body.className = 'shot-body';
+    blk.body.replaceChildren(el('div', { class: 'warn' }, '画像を読み込めませんでした（この形式は使えないか、ファイルがこわれています）。'));
+  }
+}
+function addFiles(files) {
+  const all = [...files], imgs = all.filter(isImageFile);
+  if (all.length > imgs.length) toast(`画像ではないファイルを ${all.length - imgs.length} 件スキップしました`);
+  for (const f of imgs) {
+    const blk = makeBlock(f.name);
+    queue = queue.then(() => readFile(f, blk));
+  }
+}
+setupFileInput({ drop: $('#drop'), input: $('#file'), onFiles: addFiles });
+
+// コピーした画像を貼り付け（スマホなど Ctrl + V がない端末向け）
+if (navigator.clipboard && navigator.clipboard.read) $('#pasteBtn').hidden = false;
+$('#pasteBtn').addEventListener('click', async () => {
+  try {
+    const files = [];
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find(t => t.startsWith('image/'));
+      if (type) files.push(new File([await item.getType(type)], `貼り付け_${++pasteNo}.${type.split('/')[1].replace('jpeg', 'jpg')}`, { type }));
+    }
+    if (files.length) addFiles(files);
+    else toast('コピーされた画像がありません。画像をコピーしてから押してください');
+  } catch (e) {
+    toast('貼り付けできませんでした（ブラウザが許可しなかったか、画像がコピーされていません）');
+  }
+});
+
+/* ---------- カメラ ---------- */
+const cam = { stream: null, timer: 0, devices: [], idx: 0, frame: null };
+async function startCamera(deviceId) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast('このブラウザではカメラを使えません');
+  stopCamera(true);
+  $('#cam').hidden = false;
+  $('#camStatus').textContent = 'カメラを準備しています…';
+  const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  try {
+    cam.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: deviceId ? { deviceId: { exact: deviceId }, ...size } : { facingMode: { ideal: 'environment' }, ...size } });
+  } catch (e) {
+    $('#cam').hidden = true;
+    return toast(e.name === 'NotAllowedError' ? 'カメラの使用が許可されていません。アドレスバーの左のマークから許可できます'
+      : e.name === 'NotFoundError' || e.name === 'OverconstrainedError' ? 'カメラが見つかりませんでした'
+      : 'カメラを開けませんでした（ほかのアプリが使っているかもしれません）');
+  }
+  const v = $('#video'), track = cam.stream.getVideoTracks()[0], set = track ? track.getSettings() : {};
+  // 自分に向いたカメラ（PC のカメラなど）は鏡のように左右反転して見せる（読み取りには影響なし）
+  v.classList.toggle('mirror', set.facingMode ? set.facingMode === 'user' : !matchMedia('(pointer:coarse)').matches);
+  v.srcObject = cam.stream;
+  try { await v.play(); } catch (e) { /* 自動再生できなくても、映像の枠は動く */ }
+  $('#camBtn').textContent = 'カメラを止める';
+  $('#camStatus').textContent = 'QR コードを枠の中にうつしてください';
+  try { cam.devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (e) { cam.devices = []; }
+  cam.idx = Math.max(0, cam.devices.findIndex(d => d.deviceId === set.deviceId));
+  $('#camSwitch').hidden = cam.devices.length < 2;
+  $('#cam').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  tick();
+}
+function stopCamera(keepPanel) {
+  clearTimeout(cam.timer); cam.timer = 0;
+  if (cam.stream) cam.stream.getTracks().forEach(t => t.stop());
+  cam.stream = null;
+  $('#video').srcObject = null;
+  if (!keepPanel) $('#cam').hidden = true;
+  $('#camBtn').textContent = 'カメラで読む';
+}
+async function tick() {
+  const stream = cam.stream;
+  if (!stream) return;
+  const v = $('#video');
+  if (v.readyState >= 2 && v.videoWidth) {
+    const s = Math.min(1, 960 / Math.max(v.videoWidth, v.videoHeight));
+    const W = Math.round(v.videoWidth * s), H = Math.round(v.videoHeight * s);
+    if (!cam.frame || cam.frame.width !== W || cam.frame.height !== H) cam.frame = newCanvas(W, H);
+    const x = cam.frame.getContext('2d', { willReadFrequently: true });
+    x.drawImage(v, 0, 0, W, H);
+    let found = [];
+    if (detector) {
+      try { found = (await detector.detect(cam.frame)).filter(d => d.cornerPoints && d.cornerPoints.length === 4).map(d => ({ text: d.rawValue, corners: d.cornerPoints })); } catch (e) { found = []; }
+    }
+    if (!found.length) found = QRRead.scan(x.getImageData(0, 0, W, H), { quick: true }).map(r => ({ text: r.text, corners: r.corners, sa: r.sa }));
+    if (found.length && cam.stream === stream) {
+      const snap = newCanvas(W, H);
+      snap.getContext('2d').drawImage(cam.frame, 0, 0);
+      stopCamera();
+      if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(80); // 読めたら短く震える（スマホ）
+      const d = new Date(), p = n => String(n).padStart(2, '0');
+      const blk = makeBlock(`カメラ（${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}）`);
+      showResults(blk, snap, found);
+      blk.el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+  }
+  if (cam.stream === stream) cam.timer = setTimeout(tick, 120);
+}
+$('#camBtn').addEventListener('click', () => (cam.stream ? stopCamera() : startCamera()));
+$('#camStop').addEventListener('click', () => stopCamera());
+$('#camSwitch').addEventListener('click', () => {
+  if (cam.devices.length < 2) return;
+  cam.idx = (cam.idx + 1) % cam.devices.length;
+  startCamera(cam.devices[cam.idx].deviceId);
+});
+// ほかのアプリに切り替えたらカメラを止める（電池とプライバシーのため）
+document.addEventListener('visibilitychange', () => { if (document.hidden && cam.stream) stopCamera(); });
+
+/* ---------- スマホの「共有」から届いた画像（sw.js が一時的にしまっておいたもの） ---------- */
+(async () => {
+  if (!new URLSearchParams(location.search).has('shared')) return;
+  history.replaceState(null, '', location.pathname);
+  try {
+    const cache = await caches.open('share-inbox'), files = [];
+    for (const req of await cache.keys()) {
+      const res = await cache.match(req), blob = await res.blob();
+      files.push(new File([blob], safeDecode(res.headers.get('X-File-Name') || '共有された画像'), { type: blob.type || res.headers.get('Content-Type') || 'image/png' }));
+      await cache.delete(req);
+    }
+    if (files.length) addFiles(files); else toast('共有された画像を受け取れませんでした。もう一度共有してみてください');
+  } catch (e) { toast('共有された画像を受け取れませんでした'); }
+})();
+</script>
+</body>
+</html>

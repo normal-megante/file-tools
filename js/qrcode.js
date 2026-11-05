@@ -252,7 +252,10 @@ const QR = (() => {
   const capacity = (ver, ecl) => Math.floor((dataCodewords(ver, ecl) * 8 - 4 - countBits(ver)) / 8);
   const maxBytes = ecl => capacity(40, ecl);
 
-  return { encode, capacity, maxBytes };
+  // 読み取り（js/qrread.js）でも同じ規格の表を使う
+  const spec = { ECC_PER_BLOCK, NUM_BLOCKS, rawDataModules, alignPositions };
+
+  return { encode, capacity, maxBytes, spec };
 })();
 
 if (typeof module === 'object' && module.exports) module.exports = QR; // テスト用
