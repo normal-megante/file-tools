@@ -10,7 +10,7 @@
 // ※ ツールのファイルを新しく足したら、下の PRECACHE にも書き足してください。
 // =========================================================
 
-const CACHE = 'file-tools-v7';   // しまっておく入れ物の名前
+const CACHE = 'file-tools-v8';   // しまっておく入れ物の名前
 const NETWORK_TIMEOUT = 4000;    // ネットの返事をこれだけ（ミリ秒）待ち、来なければしまってある分を使う
 
 // 最初にまとめてしまっておくファイル
@@ -25,6 +25,7 @@ const PRECACHE = [
   'pdf-to-image.html',
   'pdf-compress.html',
   'pdf-write.html',
+  'media.html',
   'manifest.webmanifest',
   'css/common.css',
   'js/common.js',
@@ -39,6 +40,10 @@ const PRECACHE = [
   // PDF の表示部品（日本語の文字表などは、使ったときにしまう）
   'vendor/pdfjs/pdf.min.mjs',
   'vendor/pdfjs/pdf.worker.min.mjs',
+  // 動画・音声の部品（MP3・FLAC の部品は、その形式を作るときだけ使う）
+  'vendor/mediabunny/mediabunny.min.js',
+  'vendor/mediabunny/mediabunny-mp3-encoder.min.js',
+  'vendor/mediabunny/mediabunny-flac-encoder.min.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-maskable-192.png',

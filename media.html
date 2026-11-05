@@ -1,0 +1,851 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>動画・音声の変換｜ファイルツール箱</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/common.css">
+<style>
+.files{display:flex;flex-direction:column;gap:8px;margin:6px 0 4px}
+.frow{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--fc);border-radius:10px;padding:10px 6px 10px 12px;box-shadow:var(--shadow)}
+.frow .ficon{color:var(--fc);flex:none;display:grid;place-items:center;width:28px}
+.frow .ficon .spin{width:20px;height:20px}
+.frow .fmain{flex:1 1 auto;min-width:0}
+.frow .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frow .sub,.frow .edits,.frow .est{font-size:12px;color:var(--muted)}
+.frow .edits{color:var(--accent)}
+.frow .edits:empty,.frow .est:empty,.frow .res:empty,.frow .wl:empty{display:none}
+.frow .wl{font-size:12px;color:var(--warn)}
+.frow .res{font-size:13px;margin-top:2px}
+.frow .btns{display:flex;flex:none;gap:2px}
+.res.good{color:var(--ok);font-weight:600}
+.res.none{color:var(--muted)}
+.res.err{color:var(--danger)}
+.res .why{font-weight:400;color:var(--muted)}
+.files.busy .btns{pointer-events:none;opacity:.4}
+.result.warn{background:var(--warn-soft)}
+.result.warn .head{color:var(--warn)}
+.fmtrow{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.fmtrow > span{flex:none;width:4.2em;font-size:12px;color:var(--muted)}
+.fmtrow .seg{flex:1}
+.fmtrow .seg label{padding:6px 2px;font-size:12.5px}
+.limit{display:flex;align-items:center;gap:6px;margin:6px 0 0 26px}
+.limit input{width:6em}
+.chk{display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:13px;cursor:pointer}
+.chk input{margin-top:4px;accent-color:var(--accent)}
+.chk small{display:block;color:var(--muted);font-size:12px}
+.foot-row{display:flex;gap:8px}
+.foot-row .primary{flex:1}
+.foot-row .btn{flex:none}
+#cancel{height:auto;padding:0 16px}
+/* 切り取り・回転の窓 */
+.ed-box{width:min(760px,100%)}
+.ed-body{padding:14px 16px;overflow-y:auto;min-height:0;flex:1 1 auto}
+.player{position:relative;background:#000;border-radius:10px;overflow:hidden;height:min(46vh,380px)}
+.player video{position:absolute;left:50%;top:50%;width:100%;height:100%;transform:translate(-50%,-50%);transition:transform .2s}
+.player.audio{height:auto;background:none}
+.player audio{width:100%}
+.ed-body h3{font-size:13px;color:var(--muted);margin:14px 0 6px;font-weight:600}
+.trim{display:grid;grid-template-columns:auto 1fr auto;gap:6px 8px;align-items:center}
+.trim input{width:100%;font-variant-numeric:tabular-nums}
+.trim span{font-size:13px}
+.rotrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="layout">
+    <section>
+      <header>
+        <a class="back" href="./">← ツール箱にもどる</a>
+        <h1>動画・音声の変換</h1>
+        <p>動画の形式を変える・軽くする、動画から音声を取り出す、音声の形式を変えるができます。処理はこの端末の中だけで行われます。</p>
+      </header>
+
+      <div id="noCodecs" class="warn" hidden>⚠ このブラウザは、動画・音声の作り直し（WebCodecs）に対応していません。Chrome か Edge の新しい版で開いてください。</div>
+
+      <div id="drop" class="drop" tabindex="0" role="button" aria-label="動画・音声を追加">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div class="big" id="dropTitle"></div>
+        <div class="muted"><span class="pc-only">またはクリックして選択（いくつでも）</span><span class="touch-only">いくつでも選べます</span></div>
+        <input type="file" id="file" accept="video/*,audio/*,.mp4,.m4v,.mov,.mkv,.webm,.ts,.mp3,.m4a,.aac,.wav,.flac,.ogg,.oga,.opus" multiple hidden>
+      </div>
+      <p class="note">MP4・MOV（iPhone）・WebM・MKV・TS の動画と、MP3・M4A・AAC・WAV・FLAC・OGG の音声が使えます。長い動画は時間がかかります。スマホでは、終わるまで画面をつけたまま、このページを開いたままにしてください（ほかのアプリに切り替えると止まることがあります）。</p>
+
+      <div class="listbar" id="listbar" hidden>
+        <span id="count"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn danger" id="clear">すべて削除</button>
+      </div>
+      <div id="files" class="files"></div>
+
+      <div class="tips">
+        <b>メモ</b>
+        <ul>
+          <li>「目安」の大きさは、だいたいの値です。動きの多い動画は大きめに、少ない動画は小さめになります。</li>
+          <li>コピー防止のついた動画（配信サービスからダウンロードしたものなど）は変換できません。</li>
+          <li>作り直す（「そのまま」以外を選ぶ）と、画質や音質は少し落ちます。元のファイルはそのまま残ります。</li>
+          <li>✂ のボタンで、使う所だけ切り取ったり、横向きになった動画を回したりできます。</li>
+        </ul>
+      </div>
+    </section>
+
+    <aside>
+      <form id="settings" class="panel" onsubmit="return false">
+       <div class="panel-body">
+        <h2>作るもの</h2>
+        <div class="fmtrow"><span>動画</span>
+          <div class="seg">
+            <label><input type="radio" name="fmt" value="mp4">MP4</label>
+            <label><input type="radio" name="fmt" value="webm">WebM</label>
+          </div>
+        </div>
+        <div class="fmtrow"><span>音声だけ</span>
+          <div class="seg">
+            <label><input type="radio" name="fmt" value="mp3">MP3</label>
+            <label><input type="radio" name="fmt" value="m4a">M4A</label>
+            <label><input type="radio" name="fmt" value="wav">WAV</label>
+            <label><input type="radio" name="fmt" value="flac">FLAC</label>
+            <label><input type="radio" name="fmt" value="ogg">OGG</label>
+          </div>
+        </div>
+        <p class="note" id="fmtNote"></p>
+
+        <div id="vbox">
+          <h2>大きさ（画面の細かさ）</h2>
+          <div class="seg">
+            <label><input type="radio" name="vsize" value="orig">元のまま</label>
+            <label><input type="radio" name="vsize" value="1080">1080p</label>
+            <label><input type="radio" name="vsize" value="720">720p</label>
+            <label><input type="radio" name="vsize" value="480">480p</label>
+            <label><input type="radio" name="vsize" value="360">360p</label>
+          </div>
+          <p class="note">短いほうの辺の画素数です（縦の動画は縦のまま縮みます）。元より大きくはしません。小さくすると、ファイルも軽くなります。</p>
+
+          <h2>画質（軽さ）</h2>
+          <div class="opts">
+            <label class="opt"><input type="radio" name="vq" value="keep"><span><span class="t">そのまま（作り直さない）</span><span class="d">形式を変えるだけ。画質は落ちず、すぐ終わる。中身の形式が合わないとき（WebM にするときなど）は「きれい」で作り直す</span></span></label>
+            <label class="opt"><input type="radio" name="vq" value="high"><span><span class="t">きれい</span><span class="d">スマホで撮った動画なら、これでも半分くらいに</span></span></label>
+            <label class="opt"><input type="radio" name="vq" value="medium"><span><span class="t">ふつう<em class="rec">おすすめ</em></span><span class="d">見た目と軽さのバランス</span></span></label>
+            <label class="opt"><input type="radio" name="vq" value="low"><span><span class="t">軽い</span><span class="d">細かい所が少しぼやける。送る・ためておく用に</span></span></label>
+            <label class="opt"><input type="radio" name="vq" value="limit"><span><span class="t">ファイルサイズを決める</span><span class="d">「◯MB 以下」にしたいとき（メールや、送れる大きさに上限があるアプリ）</span></span></label>
+          </div>
+          <div class="limit" id="limitBox"><input type="number" id="limitMB" min="1" max="4000" step="1" inputmode="numeric"><span>MB 以下</span></div>
+          <p class="note" id="limitNote" hidden></p>
+          <p class="note" id="keepNote" hidden></p>
+          <label class="chk" id="fpsBox"><input type="checkbox" id="fps30"><span>30 コマ/秒までにする<small>60 コマ/秒の動画（スマホでよくある）が軽くなります。動きのなめらかさは少し下がります</small></span></label>
+
+          <h2>音</h2>
+          <div class="seg">
+            <label><input type="radio" name="vaudio" value="keep">入れる</label>
+            <label><input type="radio" name="vaudio" value="off">消す（音なしの動画に）</label>
+          </div>
+        </div>
+
+        <div id="abox">
+          <div id="aqBox">
+            <h2>音質</h2>
+            <div class="seg" id="aqSeg"></div>
+            <p class="note">数字（kbps）が大きいほど音がよく、ファイルも大きくなります。音楽なら 160k〜192k、話し声なら 96k〜128k で十分です。「そのまま」は、元の音が同じ形式なら作り直さず、音質も落ちません（形式がちがうときは高い音質で作り直します）。</p>
+          </div>
+          <p class="note" id="losslessNote" hidden>音質はそのまま（劣化なし）です。ただし、元が MP3 や動画の音などの場合、音がよくなるわけではなく、ファイルが大きくなるだけです。</p>
+          <label class="chk"><input type="checkbox" id="mono"><span>モノラルにする<small>左右を1つにまとめます。話し声だけなら、大きさが約半分に</small></span></label>
+        </div>
+       </div>
+       <div class="panel-foot">
+        <div class="foot-row">
+          <button type="button" id="make" class="primary" disabled>変換して保存</button>
+          <button type="button" id="cancel" class="btn" hidden>やめる</button>
+        </div>
+        <div id="progress" class="progress" hidden><div class="bar"><i id="pbar"></i></div><div id="ptext" class="ptext"></div></div>
+        <div id="result" class="result" hidden></div>
+       </div>
+      </form>
+    </aside>
+  </div>
+</div>
+
+<!-- 切り取り・回転の窓 -->
+<div class="modal" id="edModal" hidden role="dialog" aria-modal="true" aria-labelledby="edTitle">
+  <div class="modal-box ed-box">
+    <div class="modal-head"><b id="edTitle">切り取り・回転</b><span class="spacer"></span><button type="button" class="icon" id="edClose" title="閉じる" aria-label="閉じる">✕</button></div>
+    <div class="ed-body">
+      <div class="player" id="player"></div>
+      <p class="note" id="playNote" hidden>この端末では見本を再生できませんでした（変換はできることがあります）。時間は数字で入れてください。</p>
+      <h3>使う所（切り取り）</h3>
+      <div class="trim">
+        <span>始め</span><input type="text" id="tStart" inputmode="decimal" placeholder="0:00" autocomplete="off"><button type="button" class="btn" id="setStart">今の位置</button>
+        <span>終わり</span><input type="text" id="tEnd" inputmode="decimal" placeholder="最後まで" autocomplete="off"><button type="button" class="btn" id="setEnd">今の位置</button>
+      </div>
+      <p class="note">「分:秒」で入れます（例：1:05.5）。空のままなら、最初から／最後までです。「画質：そのまま」のときは、切り取る所が少し（数秒まで）前後にずれることがあります。</p>
+      <div id="rotBox">
+        <h3>回転</h3>
+        <div class="rotrow">
+          <button type="button" class="btn" id="rotL">左に 90°</button>
+          <button type="button" class="btn" id="rotR">右に 90°</button>
+          <span class="small muted" id="rotLabel"></span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" id="edReset">元に戻す</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="edCancel">やめる</button>
+      <button type="button" class="primary" id="edOk">決める</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+'use strict';
+// =========================================================
+// 動画・音声の変換
+//   読み書きと作り直しは Mediabunny（vendor/mediabunny/。ブラウザの WebCodecs を使う）
+//   MP3・FLAC を作るときだけ、その部品（LAME・libFLAC の WASM）を読み込む
+//   できたファイルは、なるべく端末の中の一時置き場（OPFS）に少しずつ書く（大きな動画でメモリが足りなくならないように）
+// =========================================================
+const form = $('#settings'), list = $('#files');
+const TOUCH = matchMedia('(pointer:coarse)').matches;
+const LIB = {
+  core: 'vendor/mediabunny/mediabunny.min.js',
+  mp3: 'vendor/mediabunny/mediabunny-mp3-encoder.min.js',
+  flac: 'vendor/mediabunny/mediabunny-flac-encoder.min.js',
+};
+const COLORS = ['#2f6fed', '#e5534b', '#2f9e6e', '#d98a1c', '#7c5cdb', '#1f9bb4', '#c4458e', '#7a8a2a'];
+const VIDEO_ICON = SVG('<rect x="2" y="5" width="15" height="14" rx="2"/><path d="m17 10 5-3v10l-5-3"/>', 24);
+const AUDIO_ICON = SVG('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>', 24);
+const EDIT_ICON = SVG('<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"/>');
+
+// 作れる形式
+const FORMATS = {
+  mp4: { kind: 'video', ext: '.mp4', mime: 'video/mp4', vcodec: 'avc',
+    note: 'どこでも再生できる動画です（H.264＋AAC）。迷ったらこれ。' },
+  webm: { kind: 'video', ext: '.webm', mime: 'video/webm', vcodec: 'vp9',
+    note: 'Web 向けの動画です（VP9＋Opus）。同じ画質なら MP4 より少し小さめ。iPhone の一部のアプリでは再生できないことがあります。' },
+  mp3: { kind: 'audio', ext: '.mp3', mime: 'audio/mpeg', acodec: 'mp3', rates: [320, 192, 128, 96], lib: 'mp3',
+    note: 'どこでも再生できる音声です。音質を少し落として小さくします。' },
+  m4a: { kind: 'audio', ext: '.m4a', mime: 'audio/mp4', acodec: 'aac', rates: [192, 160, 128, 96],
+    note: 'iPhone などでよく使う音声です（AAC）。同じ大きさなら MP3 より少し音がよい。動画の音を取り出すときは「そのまま」で劣化なし・すぐ終わることが多いです。' },
+  wav: { kind: 'audio', ext: '.wav', mime: 'audio/wav', acodec: 'pcm-s16', lossless: true,
+    note: '圧縮しない音声です。音質そのままですが、とても大きくなります（1分で約 10MB）。' },
+  flac: { kind: 'audio', ext: '.flac', mime: 'audio/flac', acodec: 'flac', lossless: true, lib: 'flac',
+    note: '音質そのまま（劣化なし）で、WAV の半分くらいの大きさです。古い機器や一部のアプリでは再生できないことがあります。' },
+  ogg: { kind: 'audio', ext: '.ogg', mime: 'audio/ogg', acodec: 'opus', rates: [160, 128, 96, 64],
+    note: 'Opus の音声です。小さくても音がきれい。ただし再生できないアプリもあります（iPhone の一部など）。' },
+};
+const SIZES = ['orig', '1080', '720', '480', '360'];
+const VQ = ['keep', 'high', 'medium', 'low', 'limit'];
+const AQ = ['keep', 'q0', 'q1', 'q2', 'q3'];
+const CODEC_NAMES = { avc: 'H.264', hevc: 'HEVC（H.265）', vp8: 'VP8', vp9: 'VP9', av1: 'AV1', prores: 'ProRes', aac: 'AAC', opus: 'Opus', mp3: 'MP3', vorbis: 'Vorbis', flac: 'FLAC', ac3: 'AC-3', eac3: 'E-AC-3', dts: 'DTS', truehd: 'TrueHD', ulaw: 'μ-law', alaw: 'A-law' };
+const codecName = c => (!c ? '不明' : CODEC_NAMES[c] || (/^pcm/.test(c) ? 'PCM' : c));
+const state = { files: [], seq: 0, loading: 0, busy: false, cancel: false, conv: null, outputs: [] };
+const HAS_CODECS = typeof VideoEncoder !== 'undefined' && typeof AudioEncoder !== 'undefined';
+$('#noCodecs').hidden = HAS_CODECS;
+
+/* ---------- 部品の読み込み（使うときだけ） ---------- */
+const loading = {};
+function loadScript(src) {
+  return loading[src] || (loading[src] = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res;
+    s.onerror = () => { delete loading[src]; s.remove(); rej(new Error('部品を読み込めませんでした（ネットにつながっているか確かめてください）')); };
+    document.head.appendChild(s);
+  }));
+}
+async function MB() { await loadScript(LIB.core); return window.Mediabunny; }
+const registered = {};
+// MP3・FLAC は、ブラウザに作る機能がないので、専用の部品を足す
+async function prepareFormat(key) {
+  const M = await MB(), lib = FORMATS[key].lib;
+  if (!lib || registered[lib]) return M;
+  if (!(await M.canEncodeAudio(FORMATS[key].acodec))) {
+    await loadScript(LIB[lib]);
+    if (lib === 'mp3') window.MediabunnyMp3Encoder.registerMp3Encoder();
+    else window.MediabunnyFlacEncoder.registerFlacEncoder();
+  }
+  registered[lib] = true;
+  return M;
+}
+
+/* ---------- 時間の表示と読み取り ---------- */
+function fmtTime(s, frac = false) {
+  if (!isFinite(s)) return '?';
+  const neg = s < 0; s = Math.abs(s);
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = s % 60;
+  const ss = frac ? sec.toFixed(1).padStart(4, '0') : String(Math.floor(sec)).padStart(2, '0');
+  return (neg ? '-' : '') + (h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`);
+}
+// "1:05.5" "65.5" "1:02:03" → 秒。空なら null、読めなければ NaN
+function parseTime(t) {
+  t = String(t).trim().replace(/[：]/g, ':').replace(/[．]/g, '.').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  if (!t) return null;
+  if (!/^\d+(:\d{1,2}){0,2}(\.\d*)?$/.test(t)) return NaN;
+  return t.split(':').reduce((a, v) => a * 60 + parseFloat(v), 0);
+}
+
+/* ---------- ファイルを入れる ---------- */
+const MEDIA_EXT = /\.(mp4|m4v|mov|mkv|webm|ts|mts|m2ts|mp3|m4a|aac|wav|flac|ogg|oga|opus|3gp)$/i;
+const isMediaFile = f => /^(video|audio)\//.test(f.type) || MEDIA_EXT.test(f.name);
+async function addFiles(input) {
+  const all = [...input], use = all.filter(isMediaFile).sort((a, b) => collator.compare(a._path || a.name, b._path || b.name));
+  if (all.length > use.length) toast(`動画・音声ではないファイルを ${all.length - use.length} 件スキップしました`);
+  if (!use.length) return;
+  const wasEmpty = !state.files.length;
+  state.loading++; refresh();
+  const errors = [];
+  try {
+    const M = await MB();
+    for (const file of use) {
+      try {
+        const info = await probe(M, file);
+        addRow({ id: ++state.seq, file, name: file.name, size: file.size, info, trim: null, rot: 0, color: COLORS[state.seq % COLORS.length], result: null });
+      } catch (e) {
+        console.warn(file.name, e);
+        errors.push(`「${file.name}」は読み込めませんでした${e && e.code === 'unsupported' ? '（対応していない形式です）' : ''}`);
+      }
+      await wait(0);
+    }
+  } catch (e) {
+    console.error(e); errors.push(e.message || String(e));
+  } finally {
+    state.loading--;
+  }
+  // はじめて入れたのが音声だけなら、作るものを音声にしておく
+  if (wasEmpty && state.files.length && state.files.every(f => !f.info.video) && FORMATS[form.elements.fmt.value].kind === 'video') {
+    form.elements.fmt.value = 'mp3'; saveSettings();
+  }
+  clearResults(); refresh();
+  if (errors.length) toast(errors.length > 1 ? `${errors[0]}（ほか ${errors.length - 1} 件も）` : errors[0]);
+}
+// 中身を調べる（長さ・画面の大きさ・形式・この端末で読めるか）
+async function probe(M, file) {
+  const input = new M.Input({ source: new M.BlobSource(file), formats: M.ALL_FORMATS });
+  try {
+    if (!(await input.canRead())) { const e = new Error('unsupported'); e.code = 'unsupported'; throw e; }
+    let v = await input.getPrimaryVideoTrack(), a = await input.getPrimaryAudioTrack();
+    if (v && !v.codec) v = null; // 音楽のジャケット画像などは動画として扱わない
+    if (!v && !a) { const e = new Error('no tracks'); e.code = 'unsupported'; throw e; }
+    const dur = await input.computeDuration();
+    const info = { dur, video: null, audio: null };
+    if (v) {
+      let fps = 0;
+      try { fps = (await v.computePacketStats(120)).averagePacketRate; } catch (e) { /* 分からなくてもよい */ }
+      info.video = { w: v.displayWidth, h: v.displayHeight, codec: v.codec, fps, canDecode: await v.canDecode() };
+    }
+    if (a) {
+      info.audio = { codec: a.codec, sr: a.sampleRate, ch: a.numberOfChannels, canDecode: await a.canDecode(), br: 0 };
+      try { info.audio.br = (await a.computePacketStats(300)).averageBitrate; } catch (e) { /* 分からなくてもよい */ }
+    }
+    return info;
+  } finally { input.dispose(); }
+}
+setupFileInput({ drop: $('#drop'), input: $('#file'), onFiles: addFiles, isBusy: () => state.busy });
+
+/* ---------- ファイルの一覧 ---------- */
+function addRow(f) {
+  const el = document.createElement('div');
+  el.className = 'frow'; el.style.setProperty('--fc', f.color);
+  el.innerHTML = `<span class="ficon"></span><div class="fmain"><div class="name"></div><div class="sub"></div><div class="edits"></div><div class="wl"></div><div class="est"></div><div class="res"></div></div>
+    <div class="btns"><button type="button" class="icon ed" title="切り取り・回転" aria-label="切り取り・回転">${EDIT_ICON}</button><button type="button" class="icon del" title="${ACTION_LABEL.del}" aria-label="${ACTION_LABEL.del}">${ICON.del}</button></div>`;
+  el.querySelector('.name').textContent = f.name; el.querySelector('.name').title = f.name;
+  const i = f.info, v = i.video, a = i.audio;
+  el.querySelector('.sub').textContent = [
+    v ? `動画 ${v.w}×${v.h}` : '音声', fmtTime(i.dur),
+    [v && codecName(v.codec), a && codecName(a.codec)].filter(Boolean).join(' / ') + (v && !a ? '（音なし）' : ''),
+    fmtSize(f.size),
+  ].join(' ・ ');
+  const warns = [];
+  if (v && !v.canDecode) warns.push(`⚠ この端末では、この動画の形式（${codecName(v.codec)}）を読めません。「画質：そのまま」の MP4 なら変換できることがあります。`);
+  if (a && !a.canDecode) warns.push(`⚠ この端末では、この音の形式（${codecName(a.codec)}）を読めません。`);
+  el.querySelector('.wl').textContent = warns.join(' ');
+  el.querySelector('.ed').addEventListener('click', () => { if (!state.busy) openEditor(f); });
+  el.querySelector('.del').addEventListener('click', () => {
+    if (state.busy) return;
+    dropOutput(f);
+    el.remove(); state.files = state.files.filter(x => x !== f);
+    clearResults(); refresh();
+  });
+  f.el = el; state.files.push(f); list.appendChild(el);
+  showRow(f);
+}
+function showRow(f, working) {
+  const el = f.el;
+  el.querySelector('.ficon').innerHTML = working ? '<div class="spin"></div>' : f.info.video ? VIDEO_ICON : AUDIO_ICON;
+  const ed = [];
+  if (f.trim) ed.push(`✂ ${f.trim.start != null ? fmtTime(f.trim.start, true) : '0:00'} 〜 ${f.trim.end != null ? fmtTime(f.trim.end, true) : '最後'}`);
+  if (f.rot) ed.push(`↻ ${f.rot === 90 ? '右に 90°' : f.rot === 180 ? '180°' : '左に 90°'}`);
+  el.querySelector('.edits').textContent = ed.join(' ・ ');
+  const est = estimate(f);
+  el.querySelector('.est').textContent = est == null || f.result ? '' : `→ 目安 ${est.text}`;
+  const res = el.querySelector('.res'), r = f.result;
+  res.className = 'res'; res.textContent = '';
+  if (working) { res.classList.add('none'); res.textContent = typeof working === 'string' ? working : '準備しています…'; return; }
+  if (!r) return;
+  if (r.error) { res.classList.add('err'); res.textContent = r.error; return; }
+  if (r.canceled) { res.classList.add('none'); res.textContent = 'やめました'; return; }
+  const d = r.file.size / f.size;
+  res.classList.add('good');
+  res.textContent = `→ ${r.file.name}（${fmtSize(r.file.size)}${d < 0.97 ? `・${Math.round((1 - d) * 100)}% 小さく` : d > 1.03 ? `・${d.toFixed(1)} 倍` : ''}）`;
+  if (r.why) { const w = document.createElement('span'); w.className = 'why'; w.textContent = ' ・ ' + r.why; res.appendChild(w); }
+}
+function clearResults() {
+  for (const f of state.files) { f.result = null; showRow(f); }
+  $('#result').hidden = true;
+}
+$('#clear').addEventListener('click', () => {
+  if (state.busy) return;
+  for (const f of state.files) dropOutput(f);
+  list.textContent = ''; state.files = [];
+  clearResults(); refresh();
+});
+
+/* ---------- できあがりの大きさの目安 ---------- */
+const span = f => {
+  const s = f.trim && f.trim.start != null ? f.trim.start : 0, e = f.trim && f.trim.end != null ? f.trim.end : f.info.dur;
+  return Math.max(0, Math.min(e, f.info.dur) - Math.max(0, s));
+};
+// 画面の大きさ（回転・縮小のあと）。偶数にそろえる（H.264 などは偶数でないと作れないことがある）
+function outDims(f, vsize) {
+  const v = f.info.video;
+  let w = v.w, h = v.h;
+  if (f.rot % 180) [w, h] = [h, w];
+  const short = Math.min(w, h), want = vsize === 'orig' ? short : +vsize;
+  if (want >= short) return { w, h, scaled: false };
+  const k = want / short, ev = x => Math.max(2, Math.round(x * k / 2) * 2);
+  return { w: ev(w), h: ev(h), scaled: true };
+}
+// Mediabunny が品質の段階から決める動画のビットレート（同じ計算）
+const QLEVEL = { 'very-low': 0, low: 0.25, medium: 0.5, high: 0.75, 'very-high': 1 };
+function videoBitrate(codec, w, h, level) {
+  const eff = { avc: 1, hevc: 0.6, vp9: 0.6, av1: 0.4, vp8: 1.2 }[codec] || 1;
+  return 3e6 * Math.pow(w * h / (1920 * 1080), 0.95) * eff * 0.3 * Math.exp(2.5538 * QLEVEL[level]);
+}
+const LIMIT_AUDIO = 96000; // サイズを決めるときの音のビットレート
+function limitBytes(s) { return Math.max(0.1, s.limitMB || 0) * 1048576; }
+// 上限に収まる動画のビットレート（少し余裕をもたせる。音の分を引く）
+function limitVideoBitrate(f, s) {
+  const total = limitBytes(s) * 8 * 0.94, ab = f.info.audio && s.vaudio !== 'off' ? LIMIT_AUDIO : 0;
+  return Math.max(60000, Math.floor(total / Math.max(0.5, span(f)) - ab));
+}
+function estimate(f) {
+  const s = settings(), F = FORMATS[s.fmt], t = span(f), i = f.info;
+  if (!t) return null;
+  const mono = s.mono && i.audio && i.audio.ch > 1;
+  if (F.kind === 'audio') {
+    if (!i.audio) return null;
+    const ch = mono ? 1 : Math.min(2, i.audio.ch || 2), sr = i.audio.sr || 48000;
+    if (F.lossless) { const b = sr * ch * 2 * t * (s.fmt === 'flac' ? 0.6 : 1); return { bytes: b, text: `約 ${fmtSize(b)}` }; }
+    const keepSame = s.aq === 'keep' && !mono && sameAudio(i.audio.codec, s.fmt);
+    const b = keepSame ? (i.audio.br ? i.audio.br * t / 8 : i.video ? null : f.size * t / i.dur) : audioRate(F, s.aq, mono) * 1000 * t / 8;
+    return b == null ? null : { bytes: b, text: `約 ${fmtSize(b)}` };
+  }
+  if (!i.video) return null;
+  if (s.vq === 'limit') return { bytes: limitBytes(s), text: `${fmtSize(limitBytes(s))} 以下` };
+  const d = outDims(f, s.vsize);
+  if (s.vq === 'keep' && !d.scaled && canCopyVideo(i.video.codec, s.fmt)) return { bytes: f.size * t / i.dur, text: `約 ${fmtSize(f.size * t / i.dur)}（ほぼ元のまま）` };
+  const level = s.vq === 'keep' ? 'high' : s.vq;
+  let fps = i.video.fps || 30;
+  const fpsK = s.fps30 && fps > 31 && s.vq !== 'keep' ? 30 / fps : 1;
+  const vb = videoBitrate(F.vcodec, d.w, d.h, level) * (fpsK < 1 ? 0.8 : 1);
+  // 音：同じ形式ならそのまま（だいたい 128k〜192k）、ちがえば Mediabunny の標準の音質（AAC 192k・Opus 130k）
+  const ab = i.audio && s.vaudio !== 'off' ? (sameAudio(i.audio.codec, s.fmt) ? 160000 : s.fmt === 'mp4' ? 192000 : 130000) : 0;
+  const b = (vb + ab) * t / 8;
+  return { bytes: b, text: `約 ${fmtSize(b)}` };
+}
+// 音のビットレート（kbps）。「そのまま」で作り直すときは、いちばん高い音質。モノラルは半分（AAC は 96k より下げられない端末が多い）
+function audioRate(F, aq, mono) {
+  const r = F.rates[aq === 'keep' ? 0 : +aq.slice(1)];
+  return mono ? Math.max(F.acodec === 'aac' ? 96 : 32, r / 2) : r;
+}
+async function monoBitrate(M, codec, br, sampleRate) {
+  const half = Math.round(br / 2000) * 1000;
+  for (const b of [half, 64000, 96000, 128000].filter(x => x >= half && x <= br)) {
+    if (await M.canEncodeAudio(codec, { numberOfChannels: 1, sampleRate, bitrate: b })) return b;
+  }
+  return br;
+}
+// 「そのまま」で中身をコピーできるか。MP4 に VP9・AV1 を入れると iPhone などで再生できないので、H.264・HEVC だけ
+const canCopyVideo = (codec, fmt) => (fmt === 'mp4' ? ['avc', 'hevc'].includes(codec) : ['vp8', 'vp9', 'av1'].includes(codec));
+const sameAudio = (codec, fmt) => ({ mp4: ['aac'], m4a: ['aac'], mp3: ['mp3'], ogg: ['opus', 'vorbis'], webm: ['opus', 'vorbis'] }[fmt] || []).includes(codec);
+
+/* ---------- 設定 ---------- */
+const SETTINGS_KEY = 'media-settings-v1';
+const settings = () => {
+  const e = form.elements;
+  return { fmt: e.fmt.value, vsize: e.vsize.value, vq: e.vq.value, limitMB: parseFloat($('#limitMB').value), fps30: $('#fps30').checked, vaudio: e.vaudio.value, aq: e.aq ? e.aq.value : 'q1', mono: $('#mono').checked };
+};
+function buildAq() {
+  const F = FORMATS[form.elements.fmt.value], cur = form.elements.aq ? form.elements.aq.value : (loadedAq || 'q1');
+  if (!F.rates) return;
+  $('#aqSeg').innerHTML = `<label><input type="radio" name="aq" value="keep">そのまま</label>`
+    + F.rates.map((r, i) => `<label><input type="radio" name="aq" value="q${i}">${r}k</label>`).join('');
+  form.elements.aq.value = AQ.includes(cur) ? cur : 'q1';
+}
+let loadedAq = null;
+function updatePanel() {
+  const s = settings(), F = FORMATS[s.fmt], n = state.files.length;
+  $('#fmtNote').textContent = F.note;
+  $('#vbox').hidden = F.kind !== 'video';
+  $('#abox').hidden = F.kind !== 'audio';
+  $('#aqBox').hidden = !!F.lossless;
+  $('#losslessNote').hidden = !F.lossless;
+  if (F.kind === 'audio') buildAq();
+  // 大きさを変えるなら作り直すので「そのまま」は選べない
+  const keepRadio = form.querySelector('input[name="vq"][value="keep"]');
+  keepRadio.disabled = s.vsize !== 'orig';
+  keepRadio.closest('.opt').style.opacity = keepRadio.disabled ? 0.45 : '';
+  if (keepRadio.disabled && s.vq === 'keep') form.elements.vq.value = 'medium';
+  const s2 = settings();
+  $('#limitBox').hidden = s2.vq !== 'limit';
+  $('#fpsBox').hidden = s2.vq === 'keep';
+  // サイズを決めるとき：短すぎる上限への注意
+  const ln = $('#limitNote');
+  ln.hidden = s2.vq !== 'limit';
+  if (s2.vq === 'limit') {
+    // 画質「とても低い」に必要なビットレートより少ないと、ぼやけてしまう
+    const F2 = FORMATS[s2.fmt], tight = state.files.some(f => {
+      if (!f.info.video || !span(f)) return false;
+      const d = outDims(f, s2.vsize);
+      return limitVideoBitrate(f, s2) < 1.3 * videoBitrate(F2.vcodec, d.w, d.h, 'very-low');
+    });
+    ln.textContent = tight
+      ? '⚠ 動画の長さと大きさにくらべて上限が小さいので、画質がとても悪くなります。「大きさ」を 720p や 480p にするか、上限を大きくしてください。'
+      : '上限より少し小さめに作ります（こえたときは自動で作り直します）。長い動画ほど、画質は下がります。';
+    ln.style.color = tight ? 'var(--warn)' : '';
+  }
+  const kn = $('#keepNote'), mis = s2.vq === 'keep' ? state.files.filter(f => f.info.video && !canCopyVideo(f.info.video.codec, s2.fmt)) : [];
+  const hevc = s2.vq === 'keep' && s2.fmt === 'mp4' && state.files.some(f => f.info.video && f.info.video.codec === 'hevc');
+  kn.hidden = !mis.length && !hevc;
+  kn.textContent = (mis.length ? `※ ${mis.length === state.files.length ? '' : mis.length + ' ファイルは'}中身の形式（${[...new Set(mis.map(f => codecName(f.info.video.codec)))].join('・')}）がこの形式に入らないので、「きれい」で作り直します。` : '')
+    + (hevc ? '※ HEVC（H.265）の動画は、そのまま入れます。古いパソコンなどでは再生できないことがあります（そのときは「きれい」にすると H.264 で作り直します）。' : '');
+  const mk = $('#make');
+  mk.textContent = n > 1 ? `${n} ファイルを変換して保存` : '変換して保存';
+  mk.disabled = state.busy || state.loading > 0 || !n;
+  mk.hidden = state.busy; $('#cancel').hidden = !state.busy;
+  for (const f of state.files) if (!f.result) showRow(f);
+}
+function saveSettings() {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings())); } catch (e) { /* 保存できなくても動作には影響なし */ }
+}
+function loadSettings() {
+  const e = form.elements;
+  e.fmt.value = 'mp4'; e.vsize.value = 'orig'; e.vq.value = 'medium'; e.vaudio.value = 'keep';
+  $('#limitMB').value = 25; $('#fps30').checked = true; $('#mono').checked = false;
+  try {
+    const d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    if (d.fmt in FORMATS) e.fmt.value = d.fmt;
+    if (SIZES.includes(d.vsize)) e.vsize.value = d.vsize;
+    if (VQ.includes(d.vq)) e.vq.value = d.vq;
+    if (d.limitMB > 0 && d.limitMB <= 4000) $('#limitMB').value = d.limitMB;
+    if (typeof d.fps30 === 'boolean') $('#fps30').checked = d.fps30;
+    if (['keep', 'off'].includes(d.vaudio)) e.vaudio.value = d.vaudio;
+    if (AQ.includes(d.aq)) loadedAq = d.aq;
+    if (typeof d.mono === 'boolean') $('#mono').checked = d.mono;
+  } catch (err) { /* 初回やブロック時は既定値のまま */ }
+}
+form.addEventListener('change', () => { clearResults(); updatePanel(); saveSettings(); });
+$('#limitMB').addEventListener('input', () => { updatePanel(); saveSettings(); });
+
+/* ---------- 切り取り・回転の窓 ---------- */
+const ed = { f: null, url: null, rot: 0, media: null };
+function openEditor(f) {
+  ed.f = f; ed.rot = f.rot;
+  const isVideo = !!f.info.video, p = $('#player');
+  ed.url = URL.createObjectURL(f.file);
+  p.innerHTML = isVideo ? '<video controls playsinline preload="metadata"></video>' : '<audio controls preload="metadata"></audio>';
+  p.classList.toggle('audio', !isVideo);
+  ed.media = p.firstChild;
+  ed.media.addEventListener('error', () => { $('#playNote').hidden = false; });
+  ed.media.addEventListener('loadedmetadata', showRot);
+  ed.media.src = ed.url;
+  $('#playNote').hidden = true;
+  $('#rotBox').hidden = !isVideo;
+  $('#tStart').value = f.trim && f.trim.start != null ? fmtTime(f.trim.start, true) : '';
+  $('#tEnd').value = f.trim && f.trim.end != null ? fmtTime(f.trim.end, true) : '';
+  $('#edTitle').textContent = `切り取り${isVideo ? '・回転' : ''}：${f.name}`;
+  showRot();
+  $('#edModal').hidden = false;
+}
+function closeEditor() {
+  if (!ed.f) return;
+  if (ed.media) { ed.media.pause(); ed.media.removeAttribute('src'); ed.media.load(); }
+  URL.revokeObjectURL(ed.url);
+  $('#player').textContent = '';
+  ed.f = null; ed.media = null;
+  $('#edModal').hidden = true;
+}
+function showRot() {
+  $('#rotLabel').textContent = ed.rot ? `今：${ed.rot === 90 ? '右に 90°' : ed.rot === 180 ? '180°' : '左に 90°'}` : '今：回さない';
+  const v = ed.media;
+  if (!v || v.tagName !== 'VIDEO') return;
+  // 回したあとの形が枠に収まる大きさにしてから回す（横向き⇔縦向きで大きさが変わるため）
+  const p = $('#player'), vw = v.videoWidth, vh = v.videoHeight;
+  if (vw && vh) {
+    const side = ed.rot % 180 !== 0, k = Math.min(p.clientWidth / (side ? vh : vw), p.clientHeight / (side ? vw : vh));
+    v.style.width = vw * k + 'px'; v.style.height = vh * k + 'px';
+  }
+  v.style.transform = `translate(-50%,-50%) rotate(${ed.rot}deg)`;
+}
+$('#rotL').addEventListener('click', () => { ed.rot = (ed.rot + 270) % 360; showRot(); });
+$('#rotR').addEventListener('click', () => { ed.rot = (ed.rot + 90) % 360; showRot(); });
+$('#setStart').addEventListener('click', () => { if (ed.media) $('#tStart').value = fmtTime(ed.media.currentTime, true); });
+$('#setEnd').addEventListener('click', () => { if (ed.media) $('#tEnd').value = fmtTime(ed.media.currentTime, true); });
+$('#edReset').addEventListener('click', () => { $('#tStart').value = ''; $('#tEnd').value = ''; ed.rot = 0; showRot(); });
+$('#edClose').addEventListener('click', closeEditor);
+$('#edCancel').addEventListener('click', closeEditor);
+$('#edOk').addEventListener('click', () => {
+  const f = ed.f, dur = f.info.dur;
+  let s = parseTime($('#tStart').value), e = parseTime($('#tEnd').value);
+  if (Number.isNaN(s) || Number.isNaN(e)) return toast('時間は「分:秒」で入れてください（例：1:05.5）');
+  if (s != null && s <= 0.05) s = null;
+  if (e != null && e >= dur - 0.05) e = null;
+  if (s != null && s >= dur) return toast(`始めが長さ（${fmtTime(dur)}）をこえています`);
+  if (s != null && e != null && e - s < 0.2) return toast('終わりは、始めより後にしてください');
+  if (e != null && e < 0.2) return toast('終わりが短すぎます');
+  f.trim = s == null && e == null ? null : { start: s, end: e };
+  f.rot = ed.rot;
+  f.result = null; dropOutput(f);
+  closeEditor(); showRow(f); updatePanel();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#edModal').hidden) closeEditor(); });
+window.addEventListener('resize', () => { if (ed.f) showRot(); });
+
+/* ---------- できたファイルの置き場 ---------- */
+// できたファイルは、端末の中の一時置き場（OPFS：このサイト専用の見えないフォルダ）に少しずつ書く。
+// 使えなければメモリの中に作る。一時置き場のファイルは、次に開いたとき・削除したときに消す
+const TMP_DIR = 'media-out';
+async function tempTarget(M, name) {
+  try {
+    if (!navigator.storage || !navigator.storage.getDirectory) return null;
+    const root = await navigator.storage.getDirectory(), dir = await root.getDirectoryHandle(TMP_DIR, { create: true });
+    const fh = await dir.getFileHandle(name, { create: true });
+    if (!fh.createWritable) return null;
+    const w = await fh.createWritable();
+    return { target: new M.StreamTarget(w, { chunked: true }), file: () => fh.getFile(), remove: () => dir.removeEntry(name).catch(() => {}) };
+  } catch (e) { console.warn('一時置き場が使えません', e); return null; }
+}
+async function clearTemp() {
+  try { const root = await navigator.storage.getDirectory(); await root.removeEntry(TMP_DIR, { recursive: true }); } catch (e) { /* なければよい */ }
+}
+function dropOutput(f) { if (f.tmp) { f.tmp.remove(); f.tmp = null; } }
+
+/* ---------- 変換 ---------- */
+let wake = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wake && navigator.wakeLock) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); }
+    else if (!on && wake) { const w = wake; wake = null; await w.release(); }
+  } catch (e) { /* 画面を消さない機能がなくても動く */ }
+}
+document.addEventListener('visibilitychange', () => { if (state.busy && document.visibilityState === 'visible') keepAwake(true); });
+
+const REASONS = {
+  undecodable_source_codec: 'この端末では、元の形式を読めません',
+  no_encodable_target_codec: 'この端末では、この形式で作れません',
+  unknown_source_codec: '元の形式が分かりません',
+};
+async function convertOne(f, s, onProgress) {
+  const F = FORMATS[s.fmt], i = f.info;
+  if (F.kind === 'audio' && !i.audio) throw new Error('このファイルには音が入っていません');
+  if (F.kind === 'video' && !i.video) throw new Error('音声のファイルは動画にできません（「音声だけ」の形式を選んでください）');
+  const M = await prepareFormat(s.fmt);
+  const input = new M.Input({ source: new M.BlobSource(f.file), formats: M.ALL_FORMATS });
+  const name = sanitize(stem(f.name)) || 'media';
+  dropOutput(f);
+  const t = span(f), why = [];
+  let video, audio, vb = 0;
+  if (F.kind === 'audio') {
+    video = { discard: true };
+    audio = { codec: F.acodec };
+    const mono = s.mono && i.audio.ch > 1;
+    if (mono) audio.numberOfChannels = 1;
+    if (!F.lossless && (s.aq !== 'keep' || mono)) {
+      let br = audioRate(F, s.aq, false) * 1000;
+      // モノラルは、半分のビットレートで同じくらいの音質になる（この端末で作れる値まで上げる）
+      if (mono) br = await monoBitrate(M, F.acodec, br, F.acodec === 'opus' ? 48000 : i.audio.sr);
+      audio.quality = new M.Quality({ bitrate: br });
+    }
+    if (F.lossless) audio.forceTranscode = !sameAudio(i.audio.codec, s.fmt); // WAV・FLAC は作り直して入れる
+  } else {
+    const d = outDims(f, s.vsize);
+    video = {};
+    if (d.scaled) { video.width = d.w; video.height = d.h; video.fit = 'fill'; }
+    if (f.rot) video.rotate = f.rot;
+    const copyOk = s.vq === 'keep' && !d.scaled && canCopyVideo(i.video.codec, s.fmt);
+    if (!copyOk) {
+      // 作り直す。MP4 は H.264、WebM は VP9（作れなければ、作れるもの）
+      if (await M.canEncodeVideo(F.vcodec, { width: d.w, height: d.h })) video.codec = F.vcodec;
+      if (s.vq === 'limit') {
+        vb = limitVideoBitrate(f, s);
+        video.quality = new M.Quality({ bitrate: vb, bitrateMode: 'constant' });
+      } else video.quality = new M.Quality(s.vq === 'keep' ? 'high' : s.vq);
+      if (s.fps30 && s.vq !== 'keep' && i.video.fps > 31) video.frameRate = 30;
+      if (s.vq === 'keep') why.push('形式が合わないので作り直しました');
+    }
+    if (s.vaudio === 'off') audio = { discard: true };
+    else {
+      // 音は MP4 なら AAC、WebM なら Opus に（どの機器でも再生できるように。同じ形式ならそのまま使う）
+      audio = {};
+      const ac = s.fmt === 'mp4' ? 'aac' : 'opus';
+      if (await M.canEncodeAudio(ac)) audio.codec = ac;
+      if (s.vq === 'limit') audio.quality = new M.Quality({ bitrate: LIMIT_AUDIO });
+    }
+  }
+  const trim = f.trim ? { ...(f.trim.start != null ? { start: f.trim.start } : {}), ...(f.trim.end != null ? { end: f.trim.end } : {}) } : undefined;
+  const newFormat = () => (s.fmt === 'mp4' || s.fmt === 'm4a' ? new M.Mp4OutputFormat() : s.fmt === 'webm' ? new M.WebMOutputFormat()
+    : s.fmt === 'mp3' ? new M.Mp3OutputFormat() : s.fmt === 'wav' ? new M.WavOutputFormat() : s.fmt === 'flac' ? new M.FlacOutputFormat() : new M.OggOutputFormat());
+
+  // 1回変換する。できたもの（一時置き場のファイルか、メモリの中）を返す
+  async function runOnce(pass) {
+    let tmp = await tempTarget(M, `${f.id}-${Date.now()}${F.ext}`);
+    const output = new M.Output({ format: newFormat(), target: tmp ? tmp.target : new M.BufferTarget() });
+    try {
+      const conv = await M.Conversion.init({ input, output, video, audio, trim, showWarnings: false });
+      // 使えなかったもの（読めない・作れない）を調べる
+      const lost = conv.discardedTracks.filter(d => d.reason !== 'discarded_by_user' && !(F.kind === 'audio' && d.track.isVideoTrack()));
+      const lostVideo = lost.find(d => d.track.isVideoTrack()), lostAudio = lost.find(d => d.track.isAudioTrack());
+      if (!conv.isValid || (F.kind === 'video' && lostVideo) || (F.kind === 'audio' && !conv.utilizedTracks.some(tr => tr.isAudioTrack()))) {
+        const d = (F.kind === 'video' ? lostVideo : lostAudio) || lost[0];
+        throw new Error(d ? `${REASONS[d.reason] || '変換できません'}（${codecName(d.track.codec)}）` : '変換できる中身がありませんでした');
+      }
+      if (lostAudio && F.kind === 'video' && pass === 1) why.push(`音は入っていません（${REASONS[lostAudio.reason] || '使えない形式'}：${codecName(lostAudio.track.codec)}）`);
+      state.conv = conv;
+      conv.onProgress = p => onProgress(p, pass);
+      await conv.execute();
+      const res = { blob: tmp ? await tmp.file() : new Blob([output.target.buffer]), tmp };
+      tmp = null;
+      return res;
+    } finally {
+      state.conv = null;
+      if (tmp) tmp.remove(); // 失敗・やめたときの書きかけ
+    }
+  }
+
+  try {
+    let r;
+    for (let pass = 1; ; pass++) {
+      r = await runOnce(pass);
+      // サイズを決めたとき：上限をこえたら、こえた分だけビットレートを下げて作り直す（2回まで）
+      if (!vb || r.blob.size <= limitBytes(s) || pass >= 3) break;
+      const aBytes = (i.audio && s.vaudio !== 'off' ? LIMIT_AUDIO : 0) * t / 8;
+      const next = Math.floor(vb * Math.min(0.95, (limitBytes(s) * 0.97 - aBytes) / Math.max(1, r.blob.size - aBytes)));
+      if (next < 30000) break;
+      if (r.tmp) r.tmp.remove();
+      vb = next;
+      video.quality = new M.Quality({ bitrate: vb, bitrateMode: 'constant' });
+    }
+    if (vb && r.blob.size > limitBytes(s)) why.push('上限より少し大きくなりました。「大きさ」を小さくするか、上限を大きくしてください');
+    f.tmp = r.tmp;
+    const outName = stem(f.name).toLowerCase() + F.ext === f.name.toLowerCase() ? `${name}_変換${F.ext}` : name + F.ext;
+    return { file: new File([r.blob], outName, { type: F.mime }), why: why.join('・') };
+  } finally {
+    input.dispose();
+  }
+}
+function setProgress(done, total, label) {
+  $('#progress').hidden = false;
+  $('#pbar').style.width = (total ? Math.min(1, done / total) * 100 : 0) + '%';
+  $('#ptext').textContent = label;
+}
+$('#make').addEventListener('click', async () => {
+  const files = state.files.slice(), n = files.length, s = settings();
+  if (!n || state.busy) return;
+  if (s.vq === 'limit' && FORMATS[s.fmt].kind === 'video' && !(s.limitMB > 0)) return toast('ファイルサイズの上限（MB）を入れてください');
+  state.busy = true; state.cancel = false; refresh();
+  $('#result').hidden = true;
+  keepAwake(true);
+  for (const f of files) { dropOutput(f); f.result = null; showRow(f); }
+  try {
+    for (let k = 0; k < n && !state.cancel; k++) {
+      const f = files[k], head = n > 1 ? `${k + 1} / ${n}：` : '';
+      let t0 = performance.now(), lastPass = 1;
+      showRow(f, true);
+      setProgress(k, n, `${head}準備しています…`);
+      try {
+        f.result = await convertOne(f, s, (p, pass) => {
+          if (pass !== lastPass) { lastPass = pass; t0 = performance.now(); }
+          const pct = Math.round(p * 100), el = (performance.now() - t0) / 1000;
+          const eta = p > 0.03 && el > 3 ? `（あと約 ${fmtTime(el * (1 - p) / p)}）` : '';
+          const again = pass > 1 ? `上限に合わせて作り直しています（${pass} 回目）… ` : '変換しています… ';
+          setProgress(k + p, n, `${head}${again}${pct}%${eta}`);
+          showRow(f, `${again}${pct}%`);
+        });
+      } catch (e) {
+        if (state.cancel || (e && e.name === 'ConversionCanceledError')) f.result = { canceled: true };
+        else { console.error(f.name, e); f.result = { error: 'うまく変換できませんでした：' + (e && e.message || e) }; }
+      }
+      showRow(f);
+    }
+    for (const f of files) if (!f.result) f.result = { canceled: true }, showRow(f);
+    const name = uniqueNamer();
+    state.outputs = files.filter(f => f.result && f.result.file).map(f => {
+      const r = f.result, nm = name(stem(r.file.name), FORMATS[s.fmt].ext);
+      if (nm !== r.file.name) r.file = new File([r.file], nm, { type: r.file.type });
+      showRow(f);
+      return r.file;
+    });
+    if (state.outputs.length) await saveOutputs();
+    showResult(files);
+  } finally {
+    state.busy = false; state.cancel = false; $('#progress').hidden = true;
+    keepAwake(false); refresh();
+  }
+});
+$('#cancel').addEventListener('click', async () => {
+  if (!state.busy) return;
+  state.cancel = true;
+  $('#ptext').textContent = 'やめています…';
+  if (state.conv) try { await state.conv.cancel(); } catch (e) { /* もう終わっていてもよい */ }
+});
+async function saveOutputs() {
+  for (const f of state.outputs) { saveBlob(f, f.name); if (state.outputs.length > 1) await wait(400); }
+}
+function showResult(files) {
+  const outs = state.outputs, r = $('#result');
+  const bad = files.filter(f => f.result && f.result.error).length, canceled = files.filter(f => f.result && f.result.canceled).length;
+  r.classList.toggle('warn', !outs.length);
+  if (!outs.length) {
+    r.innerHTML = `<div class="head">${canceled ? 'やめました' : '変換できませんでした'}</div><div class="small muted line"></div>`;
+    r.querySelector('.line').textContent = canceled ? '保存したファイルはありません。' : 'くわしくは、ファイルの一覧の赤い文字を見てください。';
+    r.hidden = false; return;
+  }
+  const before = files.filter(f => f.result && f.result.file).reduce((a, f) => a + f.size, 0), after = outs.reduce((a, f) => a + f.size, 0);
+  r.innerHTML = `<div class="head">✓ 保存しました</div><div class="line"></div><div class="small muted extra" hidden></div>
+    <div class="small muted">保存先：ダウンロードフォルダ</div>
+    <div class="btns"><button type="button" class="btn" id="again">もう一度保存</button>${canShareFiles(outs) ? '<button type="button" class="btn" id="share">共有</button>' : ''}</div>`;
+  r.querySelector('.line').textContent = `${outs.length > 1 ? outs.length + ' ファイル ・ ' : ''}${fmtSize(before)} → ${fmtSize(after)}`;
+  const extra = [];
+  if (bad) extra.push(`${bad} ファイルは変換できませんでした。`);
+  if (canceled) extra.push(`${canceled} ファイルは、やめたので保存していません。`);
+  if (extra.length) { const e = r.querySelector('.extra'); e.textContent = extra.join(''); e.hidden = false; }
+  r.querySelector('#again').addEventListener('click', saveOutputs);
+  const sh = r.querySelector('#share');
+  if (sh) sh.addEventListener('click', () => shareFiles(state.outputs));
+  r.hidden = false;
+}
+window.addEventListener('beforeunload', e => { if (state.busy) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------- 画面の表示を整える ---------- */
+function refresh() {
+  const n = state.files.length;
+  list.classList.toggle('busy', state.busy);
+  $('#listbar').hidden = !n;
+  $('#drop').classList.toggle('compact', n > 0);
+  $('#dropTitle').textContent = n ? (TOUCH ? 'タップして追加' : '動画・音声を追加（ドラッグ＆ドロップ / クリック）')
+    : (TOUCH ? 'タップして動画・音声を選ぶ' : 'ここに動画・音声をドラッグ＆ドロップ');
+  const total = state.files.reduce((a, f) => a + f.size, 0);
+  $('#count').textContent = (n ? `${n} ファイル ・ 合計 ${fmtSize(total)}` : '') + (state.loading ? '　読み込み中…' : '');
+  updatePanel();
+  for (const r of form.querySelectorAll('input')) r.disabled = state.busy || (r.name === 'vq' && r.value === 'keep' && form.elements.vsize.value !== 'orig');
+}
+
+loadSettings();
+clearTemp();
+refresh();
+</script>
+</body>
+</html>

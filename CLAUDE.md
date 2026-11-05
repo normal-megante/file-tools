@@ -18,6 +18,8 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 - ファイルはすべて端末の中で処理する。サーバーには送らない。
 - HTML / CSS / JavaScript だけで作る（ビルド作業なし・外部ライブラリなし）。
   - 例外：PDF のページを絵にする（表示する）ところだけ pdf.js（Mozilla、Apache 2.0）を `vendor/pdfjs/` に同梱して使う。商用でも無料・許諾不要で、ライセンス文を同梱すればよい（2026-11-05 ユーザー了承）。PDF の保存（組み替え）は自作の `js/pdfdoc.js`。
+  - 例外2：動画・音声の読み書きに Mediabunny（MPL-2.0）と、その MP3 部品（中身は LAME、LGPL）・FLAC 部品（中身は libFLAC、BSD）を `vendor/mediabunny/` に同梱（2026-11-05、計画を見せてユーザー了承）。どれも商用でも無料・許諾不要。条件は「ライセンス文とクレジットを残す」「部品の中身を書き換えない（書き換えたらその部分を公開）」。部品は書き換えないこと。
+  - これ以外のライブラリを足すときは、先にユーザーに聞く。
 - 1つの大きなアプリにせず、作業ごとに1ページ。トップの `index.html` がメニュー。
 - PC でしかできないもの（Web ページ → PDF、Office → PDF、PDF → Word など）は、あとで PC 用の小さな Python ツールで補う予定。
 - むずかしいもの・本格的な PDF 編集は、PC に入れた PDF24 Creator を使う（自作しない）。
@@ -35,6 +37,7 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 | `pdf-to-image.html` | PDF → 画像（JPEG / PNG / WebP、100〜300 dpi、全部か選んだページだけ、回転、1枚ずつか ZIP） |
 | `pdf-compress.html` | PDF の圧縮（ふつう：写真だけ縮める／強力：ページごと画像に。強さ3段階、いくつでも、1つずつか ZIP） |
 | `pdf-write.html` | PDF に書き込み（文字・日付・✓○×・白塗り・手書き・ハンコ／サイン。選んで移動・大きさ変更・削除・元に戻す、表示の拡大。道具ごとに注意書き）。ハンコ・サインは「選ぶ・作る」の窓（保存したもの／印鑑を作る／サインを書く／画像から） |
+| `media.html` | 動画・音声の変換（動画：MP4 / WebM、音声：MP3 / M4A / WAV / FLAC / OGG。大きさ・画質・ファイルサイズの上限・30コマ・音を消す、音質・モノラル、ファイルごとの切り取り・回転。いくつでも） |
 | `css/common.css` | 全ページ共通の見た目 |
 | `js/common.js` | 共通の部品（ファイル受け取り、画像一覧 `ImageList`、縮小 `downscale`、ZIP 作成、保存・共有など） |
 | `js/pdf.js` | PDF 作成の共通部品（`buildPdf`、JPEG そのまま埋め込み、Flate 圧縮、白黒 1 ビット `bitonalFromCanvas`、用紙の配置） |
@@ -45,6 +48,7 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 | `js/stamp.js` | ハンコ・サインの部品（`Stamp.seal` 名字から印鑑、`Stamp.fromImage` 写真の白い紙を透明に、`Stamp.strokesToCanvas` / `trim` サイン、`Stamp.sealFonts` その端末で使える書体）と、作ったものをしまう `StampStore`（IndexedDB `file-tools-stamps`） |
 | `js/pdfview.js` | pdf.js を使う共通部品（`PdfView.open` / `close`、ページを canvas に描く `renderPage`、カードの見本 `thumb`、紙の名前 `paperName`、見えているカードだけ順に描く `ThumbQueue`）。ページのカードの見た目（`.card.page`、`.selbar`）は `common.css` |
 | `vendor/pdfjs/` | pdf.js 6.4.299（PDF の表示部品。中身は書き換えない。説明は中の README.md） |
+| `vendor/mediabunny/` | Mediabunny 1.62.1 と MP3・FLAC の部品（動画・音声の読み書き。中身は書き換えない。ライセンス文と説明は中の README.md） |
 | `js/qrcode.js` | QR コードの作成（自作。Node でもテストできる形） |
 | `manifest.webmanifest` / `sw.js` / `icons/` | アプリ化（PWA）。`sw.js` は「ネット優先・つながらなければ保存分」 |
 | `dev-server.py` | PC で確かめるための簡易サーバー（`python dev-server.py` → http://localhost:8140） |
@@ -56,7 +60,7 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 - 縮小は半分ずつ段階的に（`downscale`）。一気に縮めると線がギザギザになる。
 - 画像の編集情報は `{ rot, flip, crop }`。適用順は「回転 → 反転 → 切り抜き」。`crop` は 0〜1 の割合。
 - `sw.js` の `CACHE` 名と `PRECACHE` 一覧は、ファイルを増やしたら更新する。
-- 設定は `localStorage` に保存（`img2pdf-settings-v1`、`image-convert-settings-v1`、`qr-settings-v1`、`scan-settings-v1`、`pdf-pages-settings-v1`、`pdf-image-settings-v1`、`pdf-compress-settings-v1`、`pdf-write-settings-v1`）。QR の入力内容は保存しない。
+- 設定は `localStorage` に保存（`img2pdf-settings-v1`、`image-convert-settings-v1`、`qr-settings-v1`、`scan-settings-v1`、`pdf-pages-settings-v1`、`pdf-image-settings-v1`、`pdf-compress-settings-v1`、`pdf-write-settings-v1`、`media-settings-v1`）。QR の入力内容は保存しない。
 - 注意点（制限・落とし穴）は、その機能のすぐそばに短く書く（ユーザーの希望）。まとめて遠くに書かない。
 
 ### PDF のページ整理（`js/pdfdoc.js` と pdf.js）
@@ -100,6 +104,20 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
   - テスト：合成写真（影つきの紙に赤いハンコと青いサイン、正解のマスクつき）で、背景の透明度 0・インクの所 1・色の差が数段階であること。ブラウザで押して保存 → PyMuPDF で、押した所以外は変わらない、回転 4 種で向きと位置が正しい、ふちが黒ずまない、同じ画像は1回だけ（SMask つき）。
 - テスト：PyMuPDF で回転 4 種・切り抜き・切り抜き＋回転・q/Q の釣り合わない中身・Resources を親から受け継ぐ／Contents が配列／原点が 0 でないページを作り、ほかのテスト PDF（保護・パスワード・こわれたもの・日本語・フォーム）とあわせて、ブラウザで書き込んで保存 → PyMuPDF で「書き込んだ所以外は元と 1 画素も変わらない」「白塗りの所は白い」「記号・文字・手書きが決めた所に決めた色で出る」「見えない文字が取り出せて位置が合う」ことを確かめた。pdf.js でも見えない文字の位置が合うことを確かめた。
 
+### 動画・音声の変換（`media.html` と Mediabunny）
+
+- Mediabunny はクラシックな `<script>` で読む（グローバル `Mediabunny`）。npm の `dist/bundles/*.min.cjs` を `.js` に名前だけ変えて置いた（開発サーバーが `.cjs` を JavaScript として返さないため）。ページを開いただけでは読まず、ファイルを入れたときに読む。
+- MP3・FLAC はブラウザに作る機能がないので、`canEncodeAudio` が false のときだけ部品を読んで `registerMp3Encoder()` / `registerFlacEncoder()`。部品は中で WASM の Worker を作る。
+- 変換は `Conversion.init({ input, output, video, audio, trim })` → `discardedTracks` を見て「読めない・作れない」を知らせる → `execute()`。やめるは `conv.cancel()`。
+- できたファイルは OPFS（`navigator.storage.getDirectory()` の `media-out/`）に `StreamTarget` で少しずつ書く（大きな動画でメモリが足りなくならないように）。使えなければ `BufferTarget`。一時ファイルは、ページを開いたとき・行を消したとき・作り直すときに消す。
+- 画質の段階（`Quality('medium')` など）は、対応する端末では「一定の画質」（quantizer）で作るので、大きさは中身しだい（動きや細かい模様が多いと大きい）。「目安」は Mediabunny と同じ式（`videoBitrate`）で出しているが、2 倍くらいずれることがある。
+- ファイルサイズの上限は「一定のビットレート」で作り、こえたら、こえた割合だけ下げて最大 2 回作り直す。エンコーダーは指定より 5〜10% 大きく作りがち（VP9 で小さすぎる指定だと 50% 以上）。
+- 「そのまま」：MP4 には H.264・HEVC だけコピー（VP9・AV1 を MP4 に入れると iPhone などで再生できない）、WebM には VP8・VP9・AV1。合わなければ「きれい」で作り直す。音は MP4 なら AAC、WebM なら Opus（同じ形式ならコピー）。
+- 回転は `video.rotate`（元の回転情報に足される）。大きさ `width`/`height` は回転したあとの向きで指定する。コピーのときは回転情報だけ書きかえる。
+- モノラルは音のビットレートを半分に（話し声は半分でも同じくらいに聞こえる）。AAC は 96k 未満を作れない端末が多い（Windows の Chrome など）ので `canEncodeAudio` で確かめて上げる。
+- 切り取り・回転の窓の見本：回したあとの形が枠に収まるように `<video>` の大きさを決めてから `rotate`（枠の中央に `translate(-50%,-50%)` で置く）。
+- テスト：PC に ffmpeg がないので、テスト用の動画・音声はブラウザで Mediabunny の `CanvasSource` / `AudioBufferSource` で作った（1080p 60 コマの H.264＋AAC、回転情報つき MOV、HEVC、VP9＋Opus、音なし、WAV）。変換したものを Mediabunny で読み直して、形式・大きさ・回転・コマ数・長さ・音の形式とビットレートを確かめ、左上の黄色い目印の位置で回転の向きを確かめた。
+
 ### スキャン補正（`js/scan.js`）
 
 - 四隅の検出は約 480px に縮めた画像で行う（60〜180ms）。座標は「画素 i の中心 = i+0.5」で扱う（ずれると 2px ほど系統的にずれた）。
@@ -142,12 +160,18 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
         - 注意書き（それぞれのそば）：見た目だけで電子署名ではない、実印・銀行印の代わりにならない、提出先に確認、保存はこの端末だけ・共用 PC では保存しない、書体は端末による。
         - 確認済み：上のテスト（合成写真、回転 4 種、2 ページ以上に同じものを押す、保存したものの再読み込み・削除、スマホ幅）。前半の書き込みのテストも通ることを確認し直した。
         - 未確認：実機のスマホでサインを書く・写真を撮って取り込む操作感。
-4. ⬜ **変換（PC のみ）**：Web ページ → PDF、Office → PDF、PDF → Word など（Python ツール）。
+4. ✅ **動画・音声の変換**（2026-11-05）：`media.html`。
+   - 動画 → MP4（H.264＋AAC）／WebM（VP9＋Opus）。大きさ（元のまま・1080p・720p・480p・360p）、画質（そのまま＝作り直さない・きれい・ふつう・軽い・ファイルサイズを決める）、30 コマ/秒まで、音を消す。
+   - 音声だけ → MP3・M4A・WAV・FLAC・OGG（Opus）。音質（そのまま・4 段階の kbps）、モノラル。動画から音を取り出すのも、音声どうしの変換もできる。
+   - ファイルごとに ✂ の窓で、使う所の切り取り（見ながら「今の位置」）と回転。
+   - 読める形式：MP4・MOV・WebM・MKV・TS・MP3・M4A・AAC・WAV・FLAC・OGG。この端末で読めない形式（HEVC が読めない PC など）は、その行に注意を出す。
+   - 確認済み：上のテスト動画・音声で、全部の形式の組み合わせ、大きさ・画質・上限・30 コマ・切り取り・回転（4 方向）・そのまま・モノラル、やめる、一時置き場が使えないとき、動画でないファイル、スマホ幅。
+   - 未確認：実機のスマホでの速さと、長い動画（数分〜）での動き。
+5. ⬜ **変換（PC のみ）**：Web ページ → PDF、Office → PDF、PDF → Word など（Python ツール）。
 
 ### あとから増えた希望（順番は未定。2026-11-05）
 
 - **画面に出た QR コードを読む**：スクショ（画像）から読み取る。PC は Ctrl+V で貼り付け、スマホはスクショを「共有」でこのアプリに送れるようにする（アプリとして追加したとき）。カメラで読むのもできる。
-- **動画の変換**（形式・大きさ・軽くする）と **動画 → 音声**（MP3 / M4A など）。スマホのブラウザでもある程度できる（WebCodecs）。重いものは PC の Python ツール（ffmpeg）で。
 
 ## 公開
 
