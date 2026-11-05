@@ -10,7 +10,7 @@
 // ※ ツールのファイルを新しく足したら、下の PRECACHE にも書き足してください。
 // =========================================================
 
-const CACHE = 'file-tools-v3';   // しまっておく入れ物の名前
+const CACHE = 'file-tools-v4';   // しまっておく入れ物の名前
 const NETWORK_TIMEOUT = 4000;    // ネットの返事をこれだけ（ミリ秒）待ち、来なければしまってある分を使う
 
 // 最初にまとめてしまっておくファイル
@@ -22,12 +22,14 @@ const PRECACHE = [
   'qr.html',
   'scan.html',
   'pdf-pages.html',
+  'pdf-to-image.html',
   'manifest.webmanifest',
   'css/common.css',
   'js/common.js',
   'js/qrcode.js',
   'js/pdf.js',
   'js/pdfdoc.js',
+  'js/pdfview.js',
   'js/scan.js',
   // PDF の表示部品（日本語の文字表などは、使ったときにしまう）
   'vendor/pdfjs/pdf.min.mjs',

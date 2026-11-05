@@ -32,11 +32,13 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 | `qr.html` | QR コード作成（URL・文章、Wi-Fi、連絡先。PNG / SVG 保存、コピー、共有） |
 | `scan.html` | スキャン補正（カメラ撮影、四隅の自動検出と手直し、まっすぐ補正、影消し・線くっきり、PDF / 画像で保存） |
 | `pdf-pages.html` | PDF のページ整理（結合・分割・抜き出し・並べ替え・回転・削除、画像も1ページとして入れられる、元に戻す） |
+| `pdf-to-image.html` | PDF → 画像（JPEG / PNG / WebP、100〜300 dpi、全部か選んだページだけ、回転、1枚ずつか ZIP） |
 | `css/common.css` | 全ページ共通の見た目 |
 | `js/common.js` | 共通の部品（ファイル受け取り、画像一覧 `ImageList`、縮小 `downscale`、ZIP 作成、保存・共有など） |
 | `js/pdf.js` | PDF 作成の共通部品（`buildPdf`、JPEG そのまま埋め込み、Flate 圧縮、白黒 1 ビット `bitonalFromCanvas`、用紙の配置） |
 | `js/scan.js` | スキャン補正の計算（`Scan.detectDocument` 四隅検出、`paperAspect` 紙の縦横比、`warpQuad` まっすぐ補正、`enhance` 影消し・線くっきり）。画面に依存しないので Node でもテストできる |
 | `js/pdfdoc.js` | PDF を読んでページを組み替える（`PdfDoc.open` → `doc.numPages`、`PdfDoc.writePages([{doc, index, rotate}])`）。こわれた PDF の立て直し、パスワードなしで開ける保護 PDF の解除（RC4・AES-128・AES-256）。Node でもテストできる |
+| `js/pdfview.js` | pdf.js を使う共通部品（`PdfView.open` / `close`、ページを canvas に描く `renderPage`、カードの見本 `thumb`、紙の名前 `paperName`、見えているカードだけ順に描く `ThumbQueue`）。ページのカードの見た目（`.card.page`、`.selbar`）は `common.css` |
 | `vendor/pdfjs/` | pdf.js 6.4.299（PDF の表示部品。中身は書き換えない。説明は中の README.md） |
 | `js/qrcode.js` | QR コードの作成（自作。Node でもテストできる形） |
 | `manifest.webmanifest` / `sw.js` / `icons/` | アプリ化（PWA）。`sw.js` は「ネット優先・つながらなければ保存分」 |
@@ -49,7 +51,7 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 - 縮小は半分ずつ段階的に（`downscale`）。一気に縮めると線がギザギザになる。
 - 画像の編集情報は `{ rot, flip, crop }`。適用順は「回転 → 反転 → 切り抜き」。`crop` は 0〜1 の割合。
 - `sw.js` の `CACHE` 名と `PRECACHE` 一覧は、ファイルを増やしたら更新する。
-- 設定は `localStorage` に保存（`img2pdf-settings-v1`、`image-convert-settings-v1`、`qr-settings-v1`、`scan-settings-v1`、`pdf-pages-settings-v1`）。QR の入力内容は保存しない。
+- 設定は `localStorage` に保存（`img2pdf-settings-v1`、`image-convert-settings-v1`、`qr-settings-v1`、`scan-settings-v1`、`pdf-pages-settings-v1`、`pdf-image-settings-v1`）。QR の入力内容は保存しない。
 
 ### PDF のページ整理（`js/pdfdoc.js` と pdf.js）
 
@@ -58,6 +60,8 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 - pdf.js は `import('./vendor/pdfjs/pdf.min.mjs')` で必要なときだけ読む。`file://` では動かないので、PC では `dev-server.py` で確かめる。
 - pdf.js に渡すデータは持っていかれる（使えなくなる）ので、`bytes.slice()` の写しを渡す。cmaps などの場所は絶対 URL で渡す。
 - 裏で読む係（`PDFWorker`）は1つを使い回す（ファイルごとに作るとスマホのメモリが足りなくなる）。import したモジュールにはプロパティを足せない（凍結されている）。
+- この版の pdf.js の開いた PDF には `destroy()` がない。閉じるときは `doc.loadingTask.destroy()`（`PdfView.close`）。
+- PDF → 画像の大きさは「ページの大きさ（pt）× dpi ÷ 72」。メモリが足りなくならないよう、1枚の画素数が PC で 3600 万、スマホで 1600 万を超えるページは縮める（結果に「縮めました」と出す）。
 - pdf.js の描画は画面の描き替え（`requestAnimationFrame`）を待つので、ブラウザ枠が隠れていると終わらない。テストのときはページ内で `requestAnimationFrame` を `setTimeout` に差し替える。見えているかどうか（IntersectionObserver）も動かないので、テストでは `it.visible = true` にして描かせる。
 - テスト用 PDF（ふつう・xref ストリーム・日本語・保護3種・パスワードつき・こわれたもの・ページの木の入れ子・名前つきリンク）は作業用フォルダで PyMuPDF で作り、Node の `PdfDoc` で書き出して PyMuPDF で確かめた（リポジトリには入れていない）。
 
@@ -87,7 +91,8 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 3. **PDF ツール**（1つずつ作る）
    1. ✅ **ページの整理**（2026-11-05）：結合・分割（N ページずつ、ZIP も）・抜き出し・並べ替え（ドラッグ、スマホは長押し）・回転・削除・元に戻す。画像も1ページとして入れられる。
       - 確認済み：テスト PDF 11 種を開けて（パスワードつきは正しく断る）、書き出した PDF を PyMuPDF と pdf.js で開いて、ページの順番・回転・日本語・注釈・リンクが正しいこと。
-   2. ⬜ **PDF → 画像**（JPEG / PNG、画質を選ぶ、ZIP か1枚ずつ）
+   2. ✅ **PDF → 画像**（2026-11-05）：JPEG / PNG / WebP、きれいさ 4 段階（100・150・200・300 dpi）、全部か選んだページだけ、ページごとに回転、1枚ずつか ZIP。パスワードつき PDF も、パスワードを入れれば使える。
+      - 確認済み：テスト PDF（日本語・保護・パスワードつき・こわれたもの・回転・いろいろな紙の大きさ）で、書き出した画像の縦横のピクセル数が計算どおり、白紙でないこと、名前のつけ方（1つの PDF なら「名前_01」、いくつもなら「元の名前_01」）。ページ整理も共通部品に移したあと、見本・プレビュー・保存を確認し直した。
    3. ⬜ **PDF の圧縮**（ふつう：中の写真だけ縮める／強力：ページごと画像にする）
    4. ⬜ **書き込み**（文字・手書き・チェック・日付・白塗り・ハンコやサインの画像）
 4. ⬜ **変換（PC のみ）**：Web ページ → PDF、Office → PDF、PDF → Word など（Python ツール）。

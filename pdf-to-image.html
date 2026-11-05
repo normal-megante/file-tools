@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF → 画像｜ファイルツール箱</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/common.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="layout">
+    <section>
+      <header>
+        <a class="back" href="./">← ツール箱にもどる</a>
+        <h1>PDF → 画像</h1>
+        <p>PDF のページを、JPEG や PNG の画像にします。処理はこの端末の中だけで行われます。</p>
+      </header>
+
+      <div id="drop" class="drop" tabindex="0" role="button" aria-label="PDFを追加">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div class="big" id="dropTitle"></div>
+        <div class="muted"><span class="pc-only">またはクリックして選択（いくつでも）</span><span class="touch-only">いくつでも選べます</span></div>
+        <input type="file" id="file" accept="application/pdf,.pdf" multiple hidden>
+      </div>
+
+      <div class="listbar" id="listbar" hidden>
+        <span id="count"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="selAll">すべて選択</button>
+        <button type="button" class="btn danger" id="clear">すべて削除</button>
+      </div>
+      <p class="hint" id="hint" hidden>ページをタップして選ぶと、そのページだけを画像にできます。横向きになっているページは、回転ボタンで直せます。</p>
+      <div class="selbar" id="selbar" hidden>
+        <b id="selCount"></b>
+        <button type="button" class="btn" data-sel="rotl">左に回転</button>
+        <button type="button" class="btn" data-sel="rotr">右に回転</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-sel="none">選択を解除</button>
+      </div>
+      <div id="grid" class="grid"></div>
+
+      <div class="tips">
+        <b>メモ</b>
+        <ul>
+          <li>文字の多い書類や図は PNG、写真やスキャンした PDF は JPEG がおすすめです（JPEG のほうがずっと軽くなります）。</li>
+          <li>きれいさを上げると、細かい文字まではっきりしますが、ファイルは大きくなります。</li>
+          <li>パスワードつきの PDF は、開くときにパスワードを聞きます。</li>
+        </ul>
+      </div>
+    </section>
+
+    <aside>
+      <form id="settings" class="panel" onsubmit="return false">
+       <div class="panel-body">
+        <h2>画像の形式</h2>
+        <div class="seg">
+          <label><input type="radio" name="fmt" value="jpeg" checked>JPEG</label>
+          <label><input type="radio" name="fmt" value="png">PNG</label>
+          <label id="webpLabel"><input type="radio" name="fmt" value="webp">WebP</label>
+        </div>
+        <p class="note" id="fmtNote"></p>
+
+        <h2>きれいさ（解像度）</h2>
+        <div class="opts">
+          <label class="opt"><input type="radio" name="dpi" value="100"><span><span class="t">軽い</span><span class="d">100 dpi ・ スマホで見る、メッセージで送る</span></span></label>
+          <label class="opt"><input type="radio" name="dpi" value="150" checked><span><span class="t">ふつう<em class="rec">おすすめ</em></span><span class="d">150 dpi ・ 画面で読むのに十分</span></span></label>
+          <label class="opt"><input type="radio" name="dpi" value="200"><span><span class="t">きれい</span><span class="d">200 dpi ・ 細かい文字もはっきり</span></span></label>
+          <label class="opt"><input type="radio" name="dpi" value="300"><span><span class="t">高画質</span><span class="d">300 dpi ・ 印刷する、拡大して読む</span></span></label>
+        </div>
+        <p class="note" id="sizeNote"></p>
+
+        <h2>ページ</h2>
+        <div class="opts">
+          <label class="opt"><input type="radio" name="pages" value="all" checked><span><span class="t">全部のページ</span><span class="d" id="allNote"></span></span></label>
+          <label class="opt"><input type="radio" name="pages" value="sel"><span><span class="t">選んだページだけ</span><span class="d" id="selNote"></span></span></label>
+        </div>
+
+        <div id="saveBox" hidden>
+          <h2>保存のしかた</h2>
+          <div class="seg">
+            <label><input type="radio" name="save" value="each">1枚ずつ</label>
+            <label><input type="radio" name="save" value="zip">ZIPにまとめる</label>
+          </div>
+        </div>
+
+        <h2>ファイル名</h2>
+        <div class="fn" id="fnBox"><input type="text" id="fname" autocomplete="off" spellcheck="false"><span id="ext"></span></div>
+        <p class="note" id="nameNote"></p>
+       </div>
+       <div class="panel-foot">
+        <button type="button" id="make" class="primary" disabled>画像を保存</button>
+        <div id="progress" class="progress" hidden><div class="bar"><i id="pbar"></i></div><div id="ptext" class="ptext"></div></div>
+        <div id="result" class="result" hidden></div>
+       </div>
+      </form>
+    </aside>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/pdfview.js"></script>
+<script>
+'use strict';
+// =========================================================
+// PDF → 画像
+//   ページの見本も、書き出す画像も pdf.js で描く（js/pdfview.js）
+// =========================================================
+const grid = $('#grid'), form = $('#settings');
+const state = { files: [], items: [], seq: 0, loading: 0, busy: false, lastClick: null, outputs: [], outName: '', fnameTouched: false };
+const COLORS = ['#2f6fed', '#e5534b', '#2f9e6e', '#d98a1c', '#7c5cdb', '#1f9bb4', '#c4458e', '#7a8a2a'];
+const FORMATS = { jpeg: { type: 'image/jpeg', ext: '.jpg' }, png: { type: 'image/png', ext: '.png' }, webp: { type: 'image/webp', ext: '.webp' } };
+const QUALITY = { 100: 0.8, 150: 0.85, 200: 0.88, 300: 0.9 };
+const TOUCH = matchMedia('(pointer:coarse)').matches;
+const MAX_PIXELS = TOUCH ? 16e6 : 36e6; // これより大きいページは縮める（メモリが足りなくならないように）
+for (const b of document.querySelectorAll('[data-sel="rotl"],[data-sel="rotr"]')) b.insertAdjacentHTML('afterbegin', ICON[b.dataset.sel]);
+if (!canEncode('image/webp')) $('#webpLabel').hidden = true;
+
+/* ---------- PDF を入れる ---------- */
+const isPdfFile = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+async function addFiles(list) {
+  const all = [...list];
+  const use = all.filter(isPdfFile).sort((a, b) => collator.compare(a._path || a.name, b._path || b.name));
+  if (all.length > use.length) toast(`PDF ではないファイルを ${all.length - use.length} 件スキップしました`);
+  if (!use.length) return;
+  state.loading++; refresh();
+  const errors = [];
+  for (const f of use) {
+    try {
+      const doc = await PdfView.open(new Uint8Array(await f.arrayBuffer()), {
+        onPassword: again => prompt(again ? `パスワードが違います。「${f.name}」のパスワードをもう一度入れてください` : `「${f.name}」はパスワードつきです。パスワードを入れてください`),
+      });
+      const file = { name: f.name, doc, color: COLORS[state.files.length % COLORS.length] };
+      state.files.push(file);
+      for (let i = 0; i < doc.numPages; i++) addItem(file, i);
+      refresh();
+      await wait(0);
+    } catch (e) {
+      console.warn(f.name, e);
+      errors.push(e && e.name === 'PasswordException' ? `「${f.name}」はパスワードが入らなかったため開けませんでした`
+        : e && e.name === 'InvalidPDFException' ? `「${f.name}」は PDF として読めませんでした` : `「${f.name}」を読み込めませんでした`);
+    }
+  }
+  state.loading--; refresh();
+  if (errors.length) toast(errors.length > 1 ? `${errors[0]}（ほか ${errors.length - 1} 件も読み込めませんでした）` : errors[0]);
+}
+setupFileInput({ drop: $('#drop'), input: $('#file'), onFiles: addFiles, isBusy: () => state.busy });
+
+/* ---------- ページのカード ---------- */
+const allItems = new WeakMap();
+const thumbs = new PdfView.ThumbQueue({ draw: drawThumb, stale: it => it.shown !== it.rot });
+function addItem(file, index) {
+  const it = { id: ++state.seq, file, index, rot: 0, sel: false, shown: null, visible: false, view: null, el: null };
+  const el = document.createElement('div');
+  el.className = 'card page loading'; el.style.setProperty('--fc', file.color); el.style.cursor = 'pointer';
+  const btns = ['rotl', 'rotr'].map(a => `<button type="button" class="icon" data-act="${a}" title="${ACTION_LABEL[a]}" aria-label="${ACTION_LABEL[a]}">${ICON[a]}</button>`).join('');
+  el.innerHTML = `<i class="fbar"></i><div class="thumb"><img alt="" hidden draggable="false"><span class="num"></span><span class="check">${SVG('<path d="M20 6 9 17l-5-5"/>', 14)}</span><div class="spin"></div></div>
+    <div class="meta"><div class="name"></div><div class="sub"></div></div><div class="actions">${btns}</div>`;
+  const nm = el.querySelector('.name'); nm.textContent = file.name; nm.title = file.name;
+  el.querySelector('.sub').textContent = `${index + 1}ページ目`;
+  el.querySelector('.num').textContent = index + 1;
+  it.el = el; allItems.set(el, it);
+  state.items.push(it); grid.appendChild(el); thumbs.observe(el, it);
+}
+async function drawThumb(it) {
+  const rot = it.rot;
+  try {
+    const t = await PdfView.thumb(it.file.doc, it.index, rot);
+    const img = it.el.querySelector('img');
+    img.src = t.url; img.hidden = false;
+    it.view = t.view; it.rotation = t.rotation;
+    it.el.querySelector('.sub').textContent = `${it.index + 1}ページ目 ・ ${PdfView.paperName(t.view, t.rotation)}`;
+  } catch (e) {
+    console.warn('見本を描けませんでした', e);
+    const t = it.el.querySelector('.thumb');
+    if (!t.querySelector('.nothumb')) t.insertAdjacentHTML('beforeend', '<div class="nothumb">見本を表示できません</div>');
+  }
+  it.shown = rot;
+  it.el.classList.remove('loading');
+  if (it.shown !== it.rot) thumbs.want.add(it);
+  updatePanel();
+}
+
+/* ---------- 選ぶ・回す ---------- */
+const selected = () => state.items.filter(it => it.sel);
+function rotate(items, d) {
+  for (const it of items) { it.rot = (it.rot + d + 360) % 360; thumbs.queue(it); }
+  refresh();
+}
+function setSel(fn) {
+  const before = selected().length;
+  fn();
+  const after = selected().length;
+  // 選び始めたら「選んだページだけ」、全部はずしたら「全部のページ」に切り替える
+  if (!before && after) form.elements.pages.value = 'sel';
+  if (before && !after) form.elements.pages.value = 'all';
+  refresh();
+}
+grid.addEventListener('click', e => {
+  const card = e.target.closest('.card'); if (!card || state.busy) return;
+  const it = allItems.get(card); if (!it) return;
+  const b = e.target.closest('button[data-act]');
+  if (b) return rotate([it], b.dataset.act === 'rotr' ? 90 : -90);
+  setSel(() => {
+    if (e.shiftKey && state.lastClick && state.items.includes(state.lastClick)) {
+      const a = state.items.indexOf(state.lastClick), z = state.items.indexOf(it);
+      for (let i = Math.min(a, z); i <= Math.max(a, z); i++) state.items[i].sel = true;
+    } else it.sel = !it.sel;
+  });
+  state.lastClick = it;
+});
+$('#selbar').addEventListener('click', e => {
+  const b = e.target.closest('button[data-sel]'); if (!b || state.busy) return;
+  if (b.dataset.sel === 'none') setSel(() => { for (const it of state.items) it.sel = false; });
+  else rotate(selected(), b.dataset.sel === 'rotr' ? 90 : -90);
+});
+$('#selAll').addEventListener('click', () => setSel(() => {
+  const all = state.items.every(it => it.sel);
+  for (const it of state.items) it.sel = !all;
+}));
+$('#clear').addEventListener('click', () => {
+  thumbs.want.clear();
+  for (const it of state.items) { thumbs.unobserve(it.el); it.el.remove(); }
+  for (const f of state.files) PdfView.close(f.doc);
+  state.items = []; state.files = []; state.lastClick = null; state.fnameTouched = false;
+  form.elements.pages.value = 'all';
+  $('#result').hidden = true;
+  refresh();
+});
+
+/* ---------- 画面の表示を整える ---------- */
+function refresh() {
+  const n = state.items.length, sel = selected().length;
+  for (const it of state.items) it.el.classList.toggle('sel', it.sel);
+  $('#listbar').hidden = $('#hint').hidden = !n;
+  $('#drop').classList.toggle('compact', n > 0);
+  $('#dropTitle').textContent = n ? (TOUCH ? 'タップして PDF を追加' : 'PDF を追加（ドラッグ＆ドロップ / クリック）')
+    : (TOUCH ? 'タップして PDF を選ぶ' : 'ここに PDF をドラッグ＆ドロップ');
+  $('#count').textContent = (n ? `${state.files.length} ファイル ・ ${n} ページ` : '') + (state.loading ? '　読み込み中…' : '');
+  $('#selAll').textContent = n && sel === n ? '選択を解除' : 'すべて選択';
+  $('#selbar').hidden = !sel;
+  $('#selCount').textContent = `${sel} ページを選択中`;
+  updatePanel();
+}
+
+/* ---------- 設定 ---------- */
+const SETTINGS_KEY = 'pdf-image-settings-v1';
+form.elements.save.value = TOUCH ? 'each' : 'zip';
+const FMT_NOTE = {
+  jpeg: '軽い。写真やスキャンした PDF に向いています。',
+  png: '文字や線がいちばんくっきり。そのぶん大きめ。',
+  webp: 'JPEG より軽くてきれい。ただし古いソフトでは開けないことがあります。',
+};
+const targets = () => (form.elements.pages.value === 'sel' ? selected() : state.items);
+// 画像にするページが、いくつの PDF から来ているか
+const sourceFiles = list => [...new Set(list.map(it => it.file))];
+// 「名前_ページ番号」（番号はページ数に合わせて 01・001 のようにそろえる）
+const pageName = (prefix, it) => `${prefix}_${String(it.index + 1).padStart(Math.max(2, String(it.file.doc.numPages).length), '0')}`;
+function defaultName(list = targets()) {
+  const src = sourceFiles(list.length ? list : state.items);
+  if (!src.length) return '';
+  if (list.length === 1 && list[0].file.doc.numPages > 1) return pageName(stem(list[0].file.name), list[0]); // 1枚だけなら何ページ目かも
+  if (src.length === 1) return stem(src[0].name);
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return `PDFの画像_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+}
+function updatePanel() {
+  const f = form.elements, fmt = FORMATS[f.fmt.value], dpi = +f.dpi.value, list = targets(), sel = selected().length, n = list.length;
+  $('#fmtNote').textContent = FMT_NOTE[f.fmt.value];
+  $('#allNote').textContent = state.items.length ? `${state.items.length} 枚の画像になります` : 'PDF のすべてのページ';
+  $('#selNote').textContent = sel ? `選んだ ${sel} ページ` : 'ページをタップして選んでください';
+  // 書き出す大きさの目安（最初のページ）
+  const first = list.find(it => it.view);
+  if (first) {
+    const [w, h] = PdfView.pageSize(first.view, first.rotation).map(v => v * dpi / 72);
+    const s = Math.min(1, Math.sqrt(MAX_PIXELS / (w * h)));
+    $('#sizeNote').textContent = `${first.index + 1}ページ目（${PdfView.paperName(first.view, first.rotation)}）なら ${Math.round(w * s)} × ${Math.round(h * s)} ピクセル` + (s < 1 ? '（大きすぎるので縮めます）' : '');
+  } else $('#sizeNote').textContent = '';
+  $('#saveBox').hidden = n < 2;
+  const zip = n > 1 && f.save.value === 'zip', multi = sourceFiles(list).length > 1;
+  // いくつもの PDF から画像にするときは「元の PDF の名前_ページ番号」。入力した名前は ZIP の名前にだけ使う
+  $('#fnBox').hidden = multi && !zip;
+  $('#ext').textContent = zip ? '.zip' : n > 1 ? `_01${fmt.ext} など` : fmt.ext;
+  $('#nameNote').textContent = multi ? (zip ? 'ZIP の中の画像は「元の PDF の名前_ページ番号」になります' : '画像の名前は「元の PDF の名前_ページ番号」になります') : '';
+  if (!state.fnameTouched) $('#fname').value = defaultName();
+  const mk = $('#make');
+  mk.textContent = !n && f.pages.value === 'sel' ? 'ページを選んでください' : n > 1 ? `${n} 枚の画像を保存` : '画像を保存';
+  mk.disabled = state.busy || state.loading > 0 || !n;
+}
+function saveSettings() {
+  try { const f = form.elements; localStorage.setItem(SETTINGS_KEY, JSON.stringify({ fmt: f.fmt.value, dpi: f.dpi.value, save: f.save.value })); }
+  catch (e) { /* 保存できなくても動作には影響なし */ }
+}
+function loadSettings() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'), f = form.elements;
+    if (FORMATS[d.fmt] && !(d.fmt === 'webp' && $('#webpLabel').hidden)) f.fmt.value = d.fmt;
+    if (QUALITY[d.dpi]) f.dpi.value = d.dpi;
+    if (['each', 'zip'].includes(d.save)) f.save.value = d.save;
+  } catch (e) { /* 初回やブロック時は既定値のまま */ }
+}
+form.addEventListener('input', e => { if (e.target.id === 'fname') state.fnameTouched = !!e.target.value.trim(); updatePanel(); saveSettings(); });
+form.addEventListener('change', () => { updatePanel(); saveSettings(); });
+
+/* ---------- 保存 ---------- */
+function setProgress(done, total, label) {
+  $('#progress').hidden = false;
+  $('#pbar').style.width = (total ? done / total * 100 : 0) + '%';
+  $('#ptext').textContent = label;
+}
+$('#make').addEventListener('click', async () => {
+  const list = targets();
+  if (!list.length || state.busy) return;
+  const f = form.elements, fmt = FORMATS[f.fmt.value], dpi = +f.dpi.value, q = QUALITY[dpi];
+  const base = sanitize($('#fname').value) || defaultName() || 'PDF';
+  state.busy = true; grid.classList.add('busy'); updatePanel();
+  $('#result').hidden = true;
+  const outs = [], name = uniqueNamer(), single = sourceFiles(list).length === 1;
+  let shrunk = 0;
+  try {
+    for (let k = 0; k < list.length; k++) {
+      setProgress(k, list.length, `${k + 1} / ${list.length} 枚目を画像にしています…`);
+      await wait(0); // 進み具合の表示を更新させる
+      const it = list[k];
+      const r = await PdfView.renderPage(it.file.doc, it.index, { rotate: it.rot, scale: dpi / 72, maxPixels: MAX_PIXELS });
+      const data = encodeCanvas(r.canvas, fmt.type, q);
+      r.canvas.width = r.canvas.height = 0;
+      if (r.shrunk) shrunk++;
+      const nm = list.length === 1 ? base : pageName(single ? base : sanitize(stem(it.file.name)) || 'PDF', it);
+      outs.push(new File([data], name(nm, fmt.ext), { type: fmt.type }));
+    }
+    setProgress(1, 1, '');
+    state.outputs = outs; state.outName = base;
+    await saveOutputs();
+    showResult(shrunk);
+  } catch (e) {
+    console.error(e);
+    toast('エラーが発生しました：' + (e && e.message || e));
+  } finally {
+    state.busy = false; grid.classList.remove('busy'); $('#progress').hidden = true; updatePanel();
+  }
+});
+async function saveOutputs() {
+  const outs = state.outputs;
+  if (outs.length > 1 && form.elements.save.value === 'zip') {
+    saveBlob(await makeZip(outs.map(f => ({ name: f.name, blob: f }))), state.outName + '.zip');
+  } else {
+    for (const f of outs) { saveBlob(f, f.name); if (outs.length > 1) await wait(250); }
+  }
+}
+function showResult(shrunk) {
+  const outs = state.outputs, total = outs.reduce((s, f) => s + f.size, 0);
+  const r = $('#result');
+  r.innerHTML = `<div class="head">✓ 保存しました</div><div class="line"></div><div class="small muted shrunk" hidden></div>
+    <div class="small muted">保存先：ダウンロードフォルダ</div>
+    <div class="btns"><button type="button" class="btn" id="again">もう一度保存</button>${canShareFiles(outs) ? '<button type="button" class="btn" id="share">共有</button>' : ''}</div>`;
+  r.querySelector('.line').textContent = `${outs.length} 枚 ・ 合計 ${fmtSize(total)}`;
+  if (shrunk) { const s = r.querySelector('.shrunk'); s.textContent = `大きなページ ${shrunk} 枚は、メモリが足りなくならないよう少し縮めました`; s.hidden = false; }
+  r.querySelector('#again').addEventListener('click', saveOutputs);
+  const sh = r.querySelector('#share');
+  if (sh) sh.addEventListener('click', () => shareFiles(state.outputs));
+  r.hidden = false;
+}
+
+loadSettings();
+refresh();
+</script>
+</body>
+</html>

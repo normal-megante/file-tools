@@ -9,17 +9,7 @@
 <link rel="icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="css/common.css">
 <style>
-.card{position:relative}
-.card .fbar{position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--fc)}
-.card.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
-.thumb img{display:block;max-width:100%;max-height:100%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);pointer-events:none;-webkit-touch-callout:none}
-.thumb .nothumb{font-size:12px;color:var(--muted);text-align:center}
-.check{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.28);display:grid;place-items:center;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
-.card.sel .check{background:var(--accent);border-color:var(--accent)}
-.card:not(.sel) .check svg{visibility:hidden}
 .card.ghost{position:fixed;z-index:60;pointer-events:none;opacity:.92;box-shadow:0 10px 28px rgba(0,0,0,.35);transform:rotate(2deg);margin:0}
-.selbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:6px 10px;margin:0 0 10px}
-.selbar b{margin-right:4px}
 input[type=number]{width:5.5em;border:1px solid var(--line-strong);background:var(--panel);border-radius:8px;padding:5px 8px}
 .split-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .pv-stage{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;padding:14px;background:var(--thumb-bg);overflow:hidden;position:relative}
@@ -128,6 +118,7 @@ input[type=number]{width:5.5em;border:1px solid var(--line-strong);background:va
 <script src="js/common.js"></script>
 <script src="js/pdf.js"></script>
 <script src="js/pdfdoc.js"></script>
+<script src="js/pdfview.js"></script>
 <script>
 'use strict';
 // =========================================================
@@ -142,27 +133,8 @@ ICON.zoom = SVG('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8
 ACTION_LABEL.zoom = '大きく見る';
 for (const b of document.querySelectorAll('[data-sel="rotl"],[data-sel="rotr"],[data-sel="del"]')) b.insertAdjacentHTML('afterbegin', ICON[b.dataset.sel]);
 
-/* ---------- pdf.js（ページの絵を描く部品）は必要になってから読み込む ---------- */
-const PDFJS_DIR = new URL('vendor/pdfjs/', location.href).href;
-let pdfjsPromise = null, pdfWorker = null;
-function pdfjs() {
-  if (!pdfjsPromise) pdfjsPromise = import('./vendor/pdfjs/pdf.min.mjs').then(lib => {
-    lib.GlobalWorkerOptions.workerSrc = PDFJS_DIR + 'pdf.worker.min.mjs';
-    pdfWorker = new lib.PDFWorker(); // ファイルが何個あっても、裏で読む係は1人で済ませる（スマホのメモリ節約）
-    return lib;
-  });
-  return pdfjsPromise;
-}
-function viewerDoc(file) {
-  if (!file.viewer) file.viewer = pdfjs().then(lib => lib.getDocument({
-    worker: pdfWorker,
-    data: file.bytes.slice(), // pdf.js は渡したデータを持っていってしまうので写しを渡す
-    cMapUrl: PDFJS_DIR + 'cmaps/', cMapPacked: true,
-    standardFontDataUrl: PDFJS_DIR + 'standard_fonts/', wasmUrl: PDFJS_DIR + 'wasm/', iccUrl: PDFJS_DIR + 'iccs/',
-    enableXfa: false,
-  }).promise);
-  return file.viewer;
-}
+// ページの絵（見本）は pdf.js で描く（js/pdfview.js）
+const viewerDoc = file => (file.viewer ||= PdfView.open(file.bytes));
 
 /* ---------- ファイルを入れる ---------- */
 const isPdfFile = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
@@ -225,7 +197,7 @@ const allItems = new WeakMap(); // 削除したもの（元に戻す用）も引
 function addItem(file, index) {
   const it = { id: ++state.seq, file, index, rot: 0, sel: false, shown: null, visible: false, el: null };
   const el = document.createElement('div');
-  el.className = 'card loading'; el.style.setProperty('--fc', file.color);
+  el.className = 'card page loading'; el.style.setProperty('--fc', file.color);
   const btns = ['rotl', 'rotr', 'zoom', 'del'].map(a =>
     `<button type="button" class="icon${a === 'del' ? ' del' : ''}" data-act="${a}" title="${ACTION_LABEL[a]}" aria-label="${ACTION_LABEL[a]}">${ICON[a]}</button>`).join('');
   el.innerHTML = `<i class="fbar"></i><div class="thumb"><img alt="" hidden draggable="false"><span class="num"></span><span class="check">${SVG('<path d="M20 6 9 17l-5-5"/>', 14)}</span><div class="spin"></div></div>
@@ -233,57 +205,19 @@ function addItem(file, index) {
   const nm = el.querySelector('.name'); nm.textContent = file.name; nm.title = file.name;
   el.querySelector('.sub').textContent = `${index + 1}ページ目`;
   it.el = el; allItems.set(el, it);
-  state.items.push(it); grid.appendChild(el); io.observe(el);
-}
-
-// 紙の大きさの名前（A4 など）
-const PAPERS = [['A3', 297, 420], ['A4', 210, 297], ['A5', 148, 210], ['B4', 257, 364], ['B5', 182, 257], ['レター', 216, 279], ['リーガル', 216, 356]];
-function paperName(view, rot) {
-  let w = (view[2] - view[0]) * 25.4 / 72, h = (view[3] - view[1]) * 25.4 / 72;
-  if (rot % 180) [w, h] = [h, w];
-  const p = PAPERS.find(([, a, b]) => (Math.abs(w - a) < 3 && Math.abs(h - b) < 3) || (Math.abs(w - b) < 3 && Math.abs(h - a) < 3));
-  return p ? p[0] + (w > h ? ' 横' : '') : `${Math.round(w)}×${Math.round(h)} mm`;
+  state.items.push(it); grid.appendChild(el); thumbs.observe(el, it);
 }
 
 // 見えているカードだけ、順番に絵を描く
-const want = new Set();
-let drawing = false;
-const io = new IntersectionObserver(entries => {
-  for (const e of entries) {
-    const it = allItems.get(e.target); if (!it) continue;
-    it.visible = e.isIntersecting;
-    if (it.visible && it.shown !== it.rot) want.add(it);
-  }
-  pump();
-}, { rootMargin: '500px 0px' });
-function queueDraw(it) { want.add(it); pump(); }
-async function pump() {
-  if (drawing) return;
-  drawing = true;
-  try {
-    while (want.size) {
-      let it = null;
-      for (const x of want) if (x.visible) { it = x; break; }
-      if (!it) break;
-      want.delete(it);
-      if (it.shown !== it.rot) await drawThumb(it);
-    }
-  } finally { drawing = false; }
-}
+const thumbs = new PdfView.ThumbQueue({ draw: drawThumb, stale: it => it.shown !== it.rot });
+const queueDraw = it => thumbs.queue(it);
 async function drawThumb(it) {
   const rot = it.rot;
   try {
-    const doc = await viewerDoc(it.file), page = await doc.getPage(it.index + 1);
-    const r = (page.rotate + rot) % 360, v1 = page.getViewport({ scale: 1, rotation: r });
-    const target = Math.round(190 * Math.min(2, window.devicePixelRatio || 1));
-    const vp = page.getViewport({ scale: target / Math.max(v1.width, v1.height), rotation: r });
-    const c = newCanvas(Math.max(1, Math.floor(vp.width)), Math.max(1, Math.floor(vp.height)));
-    await page.render({ canvas: c, viewport: vp }).promise;
+    const t = await PdfView.thumb(await viewerDoc(it.file), it.index, rot);
     const img = it.el.querySelector('img');
-    img.src = c.toDataURL('image/jpeg', 0.85); img.hidden = false;
-    c.width = c.height = 0;
-    it.el.querySelector('.sub').textContent = `${it.index + 1}ページ目 ・ ${paperName(page.view, r)}`;
-    page.cleanup();
+    img.src = t.url; img.hidden = false;
+    it.el.querySelector('.sub').textContent = `${it.index + 1}ページ目 ・ ${PdfView.paperName(t.view, t.rotation)}`;
   } catch (e) {
     console.warn('見本を描けませんでした', e);
     const t = it.el.querySelector('.thumb');
@@ -291,7 +225,7 @@ async function drawThumb(it) {
   }
   it.shown = rot;
   it.el.classList.remove('loading');
-  if (it.shown !== it.rot) want.add(it);
+  if (it.shown !== it.rot) thumbs.want.add(it);
 }
 
 /* ---------- 元に戻す ---------- */
@@ -567,14 +501,11 @@ async function drawPreview() {
   $('#pvName').textContent = `${pos + 1} / ${state.items.length} ・ ${it.file.name} の ${it.index + 1}ページ目`;
   $('#pvBusy').hidden = false;
   try {
-    const doc = await viewerDoc(it.file), page = await doc.getPage(it.index + 1);
-    if (gen !== pv.gen) return;
-    const r = (page.rotate + it.rot) % 360, v1 = page.getViewport({ scale: 1, rotation: r });
+    const doc = await viewerDoc(it.file);
     const stage = $('.pv-stage').getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
-    const s = Math.min(1600 / Math.max(v1.width, v1.height), Math.max(stage.width - 28, 200) * dpr / v1.width, Math.max(Math.min(window.innerHeight * 0.72, 800), 200) * dpr / v1.height);
-    const vp = page.getViewport({ scale: s, rotation: r }), c = newCanvas(Math.floor(vp.width), Math.floor(vp.height));
-    await page.render({ canvas: c, viewport: vp }).promise;
-    if (gen !== pv.gen) return;
+    const boxW = Math.max(stage.width - 28, 200) * dpr, boxH = Math.max(Math.min(window.innerHeight * 0.72, 800), 200) * dpr;
+    const { canvas: c } = await PdfView.renderPage(doc, it.index, { rotate: it.rot, maxSide: Math.min(1600, Math.max(boxW, boxH)) });
+    if (gen !== pv.gen) { c.width = c.height = 0; return; }
     const out = $('#pvCanvas');
     out.width = c.width; out.height = c.height; out.getContext('2d').drawImage(c, 0, 0);
     c.width = c.height = 0;

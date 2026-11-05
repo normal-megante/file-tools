@@ -82,6 +82,18 @@ header p{margin:0;color:var(--muted)}
 @media (pointer:coarse){.icon.move{display:grid}}
 .card.error .icon:not(.del){visibility:hidden}
 
+/* ---- PDF のページのカード（選べる。左の色の線はどのファイルのページか） ---- */
+.card.page{position:relative}
+.card .fbar{position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--fc)}
+.card.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.thumb img{display:block;max-width:100%;max-height:100%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);pointer-events:none;-webkit-touch-callout:none}
+.thumb .nothumb{font-size:12px;color:var(--muted);text-align:center}
+.check{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.28);display:grid;place-items:center;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.card.sel .check{background:var(--accent);border-color:var(--accent)}
+.card:not(.sel) .check svg{visibility:hidden}
+.selbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:6px 10px;margin:0 0 10px}
+.selbar b{margin-right:4px}
+
 /* ---- 右側の設定パネル（設定は中でスクロールし、実行ボタンは常に見える） ---- */
 aside{align-self:stretch}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);position:sticky;top:16px;max-height:calc(100vh - 32px);display:flex;flex-direction:column;overflow:hidden}
