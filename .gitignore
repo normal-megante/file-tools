@@ -1,0 +1,10 @@
+# Claude Code のローカル設定（公開しない）
+.claude/
+
+# Python が自動で作るファイル
+__pycache__/
+*.pyc
+
+# Windows が自動で作るファイル
+Thumbs.db
+desktop.ini

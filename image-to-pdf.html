@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>画像→PDF｜ファイルツール箱</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/common.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="layout">
+    <section>
+      <header>
+        <a class="back" href="./">← ツール箱にもどる</a>
+        <h1>画像 → PDF</h1>
+        <p>JPEG・PNG・WebP などを PDF にまとめて、サイズも小さくできます。処理はすべてこの端末の中で行われ、画像がネットに送られることはありません。</p>
+      </header>
+
+      <div id="drop" class="drop" tabindex="0" role="button" aria-label="画像を追加">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div class="big" id="dropTitle"></div>
+        <div class="muted"><span class="pc-only">またはクリックして選択　（フォルダごと・Ctrl+V の貼り付けもOK）</span><span class="touch-only">写真やファイルから選べます</span></div>
+        <input type="file" id="file" accept="image/*,.jpg,.jpeg,.jfif,.png,.webp,.gif,.bmp,.avif" multiple hidden>
+      </div>
+
+      <div class="listbar" id="listbar" hidden>
+        <span id="count"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="sortName">名前順に並べる</button>
+        <button type="button" class="btn" id="reverse">逆順</button>
+        <button type="button" class="btn danger" id="clear">すべて削除</button>
+      </div>
+      <p class="hint" id="hint" hidden><span class="pc-only">カードをドラッグすると順番を入れ替えられます。</span><span class="touch-only">‹ › ボタンで順番を入れ替えられます。</span>この順番でページになります。</p>
+      <div id="grid" class="grid"></div>
+
+      <div class="tips">
+        <b>ヒント</b>
+        <ul>
+          <li>「元の画質のまま」では JPEG を再圧縮せずにそのまま入れるので、画質はまったく落ちません。</li>
+          <li>書類やスクリーンショットは「白黒」にするとさらに小さくなります。</li>
+          <li>できたファイルはブラウザの「ダウンロード」フォルダに保存されます。</li>
+        </ul>
+      </div>
+    </section>
+
+    <aside>
+      <form id="settings" class="panel" onsubmit="return false">
+       <div class="panel-body">
+        <h2>圧縮のしかた</h2>
+        <div class="opts">
+          <label class="opt"><input type="radio" name="preset" value="original"><span><span class="t">元の画質のまま</span><span class="d">画質を落とさない（JPEGはそのまま入れる）</span></span></label>
+          <label class="opt"><input type="radio" name="preset" value="high"><span><span class="t">高画質</span><span class="d">長辺 3000px・画質 85　印刷向け</span></span></label>
+          <label class="opt"><input type="radio" name="preset" value="standard" checked><span><span class="t">標準<em class="rec">おすすめ</em></span><span class="d">長辺 2000px・画質 75　画面で見るなら十分きれい</span></span></label>
+          <label class="opt"><input type="radio" name="preset" value="small"><span><span class="t">小さめ</span><span class="d">長辺 1500px・画質 60</span></span></label>
+          <label class="opt"><input type="radio" name="preset" value="min"><span><span class="t">最小</span><span class="d">長辺 1000px・画質 45　メール添付やアップロード上限対策に</span></span></label>
+          <label class="opt"><input type="radio" name="preset" value="custom"><span><span class="t">カスタム</span><span class="d">画質と大きさを自分で決める</span></span></label>
+        </div>
+        <div id="customBox" class="custom" hidden>
+          <div class="row"><span>画質</span><div class="range"><input type="range" name="q" id="q" min="10" max="95" step="5" value="70"><output id="qv">70</output></div></div>
+          <div class="row"><span>長辺の最大</span>
+            <select name="maxpx">
+              <option value="0">縮小しない</option><option value="4000">4000px</option><option value="3000">3000px</option>
+              <option value="2500">2500px</option><option value="2000" selected>2000px</option><option value="1600">1600px</option>
+              <option value="1280">1280px</option><option value="1000">1000px</option><option value="800">800px</option>
+            </select>
+          </div>
+        </div>
+
+        <h2>色</h2>
+        <div class="seg">
+          <label><input type="radio" name="color" value="color" checked>カラー</label>
+          <label><input type="radio" name="color" value="gray">白黒（グレー）</label>
+        </div>
+
+        <h2>ページ</h2>
+        <div class="row"><span>用紙</span>
+          <select name="paper">
+            <option value="fit" selected>画像に合わせる</option><option value="A4">A4</option><option value="A3">A3</option>
+            <option value="A5">A5</option><option value="B5">B5</option><option value="B4">B4</option><option value="Letter">レター</option>
+          </select>
+        </div>
+        <div class="row"><span>向き</span>
+          <select name="orient"><option value="auto">自動（画像に合わせる）</option><option value="portrait">縦</option><option value="landscape">横</option></select>
+        </div>
+        <div class="row"><span>余白</span>
+          <select name="margin"><option value="0" selected>なし</option><option value="5">狭い（5mm）</option><option value="10">普通（10mm）</option><option value="20">広い（20mm）</option></select>
+        </div>
+
+        <h2>出力</h2>
+        <div class="seg">
+          <label><input type="radio" name="output" value="single" checked>1つのPDFにまとめる</label>
+          <label><input type="radio" name="output" value="each">1枚ずつ別のPDF</label>
+        </div>
+        <p class="note" id="eachNote" hidden>画像ごとのPDFを、ZIPファイル1つにまとめて保存します。</p>
+        <div class="row"><span>ファイル名</span><div class="fn"><input type="text" id="fname" placeholder="images" autocomplete="off" spellcheck="false"><span id="ext">.pdf</span></div></div>
+       </div>
+       <div class="panel-foot">
+        <button type="button" id="make" class="primary" disabled>PDFを作成</button>
+        <div id="progress" class="progress" hidden><div class="bar"><i id="pbar"></i></div><div id="ptext" class="ptext"></div></div>
+        <div id="result" class="result" hidden></div>
+       </div>
+      </form>
+    </aside>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+'use strict';
+const state = { busy: false, url: null, outName: '', blob: null };
+const HAS_DEFLATE = typeof CompressionStream !== 'undefined';
+const PRESETS = {
+  high:     { max: 3000, q: 0.85 },
+  standard: { max: 2000, q: 0.75 },
+  small:    { max: 1500, q: 0.60 },
+  min:      { max: 1000, q: 0.45 },
+};
+// 用紙サイズ（縦向き, pt）
+const PAPER = { A4: [595.28, 841.89], A3: [841.89, 1190.55], A5: [419.53, 595.28], B5: [515.91, 728.5], B4: [728.5, 1031.81], Letter: [612, 792] };
+
+/* ---------- 画像の一覧 ---------- */
+const list = new ImageList($('#grid'), { onChange: refresh });
+setupFileInput({
+  drop: $('#drop'), input: $('#file'),
+  onFiles: files => list.add(files),
+  isBusy: () => state.busy, isInternalDrag: () => list.isDragging,
+});
+$('#sortName').addEventListener('click', () => list.sortByName());
+$('#reverse').addEventListener('click', () => list.reverse());
+$('#clear').addEventListener('click', () => list.clear());
+
+function refresh() {
+  const items = list.items, ok = list.ok, errors = list.errors;
+  $('#listbar').hidden = $('#hint').hidden = !items.length;
+  $('#drop').classList.toggle('compact', items.length > 0);
+  const touch = matchMedia('(pointer:coarse)').matches;
+  $('#dropTitle').textContent = items.length ? (touch ? 'タップして画像を追加' : '画像を追加（ドラッグ＆ドロップ / クリック）')
+    : (touch ? 'タップして画像を選ぶ' : 'ここに画像をドラッグ＆ドロップ');
+  $('#count').textContent = `${ok.length} 枚（合計 ${fmtSize(ok.reduce((s, i) => s + i.size, 0))}）` +
+    (list.loading ? '　読み込み中…' : '') + (errors ? `　読み込めない ${errors} 件` : '');
+  $('#make').disabled = state.busy || list.loading || !ok.length;
+  $('#fname').placeholder = ok.length ? sanitize(stem(ok[0].name)) || 'images' : 'images';
+}
+
+/* ---------- 設定 ---------- */
+const form = $('#settings'), SETTINGS_KEY = 'img2pdf-settings-v1';
+function updateSettingsUi() {
+  const f = form.elements;
+  $('#customBox').hidden = f.preset.value !== 'custom';
+  $('#qv').textContent = f.q.value;
+  f.orient.disabled = f.paper.value === 'fit';
+  const each = f.output.value === 'each';
+  $('#eachNote').hidden = !each;
+  $('#ext').textContent = each ? '.zip' : '.pdf';
+}
+function saveSettings() {
+  try {
+    const d = {};
+    for (const el of form.elements) {
+      if (!el.name) continue;
+      if (el.type === 'radio') { if (el.checked) d[el.name] = el.value; } else d[el.name] = el.value;
+    }
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(d));
+  } catch (e) { /* 保存できなくても動作には影響なし */ }
+}
+function loadSettings() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    for (const [k, v] of Object.entries(d)) {
+      const el = form.elements[k]; if (!el) continue;
+      const valid = el instanceof RadioNodeList ? [...el].some(r => r.value === v)
+        : el.tagName === 'SELECT' ? [...el.options].some(o => o.value === v) : true;
+      if (valid) el.value = v;
+    }
+  } catch (e) { /* 初回やブロック時は既定値のまま */ }
+}
+function getOpts() {
+  const f = form.elements, preset = f.preset.value;
+  let mode = 'lossy', max, q;
+  if (preset === 'original') { mode = 'original'; max = 0; q = 0.92; }
+  else if (preset === 'custom') { max = +f.maxpx.value; q = +f.q.value / 100; }
+  else ({ max, q } = PRESETS[preset]);
+  return { mode, max, q, gray: f.color.value === 'gray', paper: f.paper.value, orient: f.orient.value, margin: +f.margin.value, output: f.output.value };
+}
+form.addEventListener('input', () => { updateSettingsUi(); saveSettings(); });
+form.addEventListener('change', () => { updateSettingsUi(); saveSettings(); });
+
+/* ---------- JPEG 解析（再圧縮せずにそのまま入れるため） ---------- */
+function exifOrientation(b, t, end) {
+  if (t + 8 > end) return 1;
+  const le = b[t] === 0x49 && b[t + 1] === 0x49, be = b[t] === 0x4D && b[t + 1] === 0x4D;
+  if (!le && !be) return 1;
+  const u16 = o => le ? b[o] | (b[o + 1] << 8) : (b[o] << 8) | b[o + 1];
+  const u32 = o => (le ? (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) : ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3])) >>> 0;
+  const ifd = t + u32(t + 4);
+  if (ifd + 2 > end) return 1;
+  const n = u16(ifd);
+  for (let k = 0; k < n; k++) {
+    const e = ifd + 2 + k * 12;
+    if (e + 12 > end) break;
+    if (u16(e) === 0x0112) { const v = u16(e + 8); return v >= 1 && v <= 8 ? v : 1; }
+  }
+  return 1;
+}
+const ascii = (b, s, n) => String.fromCharCode(...b.subarray(s, s + n));
+
+// SOF・EXIFの向き・ICCプロファイルを読み取り、表示に不要なメタデータ（EXIF・サムネイル・付属画像）を除いたJPEGを返す
+function analyzeJpeg(b) {
+  if (b.length < 4 || b[0] !== 0xFF || b[1] !== 0xD8) return null;
+  const parts = [b.subarray(0, 2)], icc = [];
+  let i = 2, info = null, orient = 1, sawScan = false;
+  while (i + 3 < b.length) {
+    if (b[i] !== 0xFF) return null;
+    const m = b[i + 1];
+    if (m === 0xFF) { i++; continue; }
+    if (m === 0x01 || (m >= 0xD0 && m <= 0xD8)) { i += 2; continue; }
+    if (m === 0xD9) break;
+    const len = (b[i + 2] << 8) | b[i + 3], s = i + 4, e = i + 2 + len;
+    if (len < 2 || e > b.length) return null;
+    if (m === 0xDA) {
+      // エントロピー符号化データを走査して、メイン画像の EOI を探す（後ろに付いたゲインマップ等は捨てる）
+      let j = e, end = -1;
+      while (j + 1 < b.length) {
+        if (b[j] !== 0xFF) { j++; continue; }
+        const n = b[j + 1];
+        if (n === 0x00 || (n >= 0xD0 && n <= 0xD7)) { j += 2; continue; }
+        if (n === 0xFF) { j++; continue; }
+        if (n === 0xD9) { end = j + 2; break; }
+        j += 2 + ((b[j + 2] << 8) | b[j + 3]);
+      }
+      parts.push(b.subarray(i, end > 0 ? end : b.length));
+      sawScan = true;
+      break;
+    }
+    if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC)
+      info = { sof: m, prec: b[s], h: (b[s + 1] << 8) | b[s + 2], w: (b[s + 3] << 8) | b[s + 4], comps: b[s + 5] };
+    if (m === 0xE1 && len >= 16 && ascii(b, s, 6) === 'Exif\0\0') orient = exifOrientation(b, s + 6, e);
+    if (m === 0xE2 && len >= 16 && ascii(b, s, 12) === 'ICC_PROFILE\0') icc.push([b[s + 12], b.subarray(s + 14, e)]);
+    const drop = (m >= 0xE1 && m <= 0xEF && m !== 0xEE) || m === 0xFE; // APP1〜15（Adobe APP14 以外）とコメント
+    if (!drop) parts.push(b.subarray(i, e));
+    i = e;
+  }
+  if (!info || !sawScan) return null;
+  info.orient = orient;
+  info.ok = (info.sof === 0xC0 || info.sof === 0xC1 || info.sof === 0xC2) && info.prec === 8 &&
+            (info.comps === 1 || info.comps === 3) && info.w > 0 && info.h > 0;
+  info.data = concatBytes(parts);
+  info.icc = null;
+  if (icc.length) {
+    const prof = concatBytes(icc.sort((a, b) => a[0] - b[0]).map(c => c[1]));
+    const sig = prof.length >= 128 ? ascii(prof, 16, 4) : '';
+    if ((info.comps === 3 && sig === 'RGB ') || (info.comps === 1 && sig === 'GRAY')) info.icc = prof;
+  }
+  return info;
+}
+
+/* ---------- 画像のエンコード ---------- */
+async function renderCanvas(file, scale, gray) {
+  const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  const tw = Math.max(1, Math.round(bmp.width * scale)), th = Math.max(1, Math.round(bmp.height * scale));
+  const out = downscale(bmp, tw, th, '#fff'); // 透明部分は白に
+  bmp.close();
+  if (gray) {
+    const ctx = out.getContext('2d'), d = ctx.getImageData(0, 0, tw, th), p = d.data;
+    for (let i = 0; i < p.length; i += 4) p[i] = p[i + 1] = p[i + 2] = (p[i] * 299 + p[i + 1] * 587 + p[i + 2] * 114 + 500) / 1000 | 0;
+    ctx.putImageData(d, 0, 0);
+  }
+  return out;
+}
+const jpegFromCanvas = (c, q) => ({ w: c.width, h: c.height, comps: 3, filter: 'DCTDecode', data: encodeCanvas(c, 'image/jpeg', q), orient: 1 });
+
+// PNG と同じ行ごとのフィルタ（PDF の /Predictor 15）。スクショや図は JPEG より小さく・くっきりになることが多い
+function pngFilter(raw, w, h, bpp) {
+  const rl = w * bpp, out = new Uint8Array(h * (rl + 1)), zero = new Uint8Array(rl);
+  const f = [0, 1, 2, 3, 4].map(() => new Uint8Array(rl));
+  for (let y = 0; y < h; y++) {
+    const o = y * rl, cur = raw.subarray(o, o + rl), up = y ? raw.subarray(o - rl, o) : zero;
+    const f0 = f[0], f1 = f[1], f2 = f[2], f3 = f[3], f4 = f[4];
+    for (let i = 0; i < rl; i++) {
+      const x = cur[i], a = i >= bpp ? cur[i - bpp] : 0, b = up[i], c = i >= bpp ? up[i - bpp] : 0;
+      f0[i] = x; f1[i] = x - a; f2[i] = x - b; f3[i] = x - ((a + b) >> 1);
+      const p = a + b - c, pa = p > a ? p - a : a - p, pb = p > b ? p - b : b - p, pc = p > c ? p - c : c - p;
+      f4[i] = x - (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
+    }
+    let best = 0, bestSum = Infinity;
+    for (let k = 0; k < 5; k++) {
+      const t = f[k]; let s = 0;
+      for (let i = 0; i < rl; i++) { const v = t[i]; s += v < 128 ? v : 256 - v; }
+      if (s < bestSum) { bestSum = s; best = k; }
+    }
+    out[y * (rl + 1)] = best; out.set(f[best], y * (rl + 1) + 1);
+  }
+  return out;
+}
+async function deflate(u8) {
+  const stream = new Blob([u8]).stream().pipeThrough(new CompressionStream('deflate'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function flateFromCanvas(c, gray) {
+  const w = c.width, h = c.height, px = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  const bpp = gray ? 1 : 3, raw = new Uint8Array(w * h * bpp);
+  if (gray) for (let i = 0, j = 0; j < raw.length; i += 4, j++) raw[j] = px[i];
+  else for (let i = 0, j = 0; j < raw.length; i += 4, j += 3) { raw[j] = px[i]; raw[j + 1] = px[i + 1]; raw[j + 2] = px[i + 2]; }
+  const data = await deflate(pngFilter(raw, w, h, bpp));
+  return { w, h, comps: bpp, filter: 'FlateDecode', parms: `<< /Predictor 15 /Colors ${bpp} /BitsPerComponent 8 /Columns ${w} >>`, data, orient: 1 };
+}
+
+// 1枚の画像を PDF に入れる形にする。候補を作って一番小さいものを選ぶ
+async function encodeItem(it, o) {
+  const jp = it.isJpeg ? analyzeJpeg(new Uint8Array(await it.file.arrayBuffer())) : null;
+  const passable = !!(jp && jp.ok && (!o.gray || jp.comps === 1));
+  const pass = () => ({ w: jp.w, h: jp.h, comps: jp.comps, filter: 'DCTDecode', data: jp.data, icc: jp.icc, orient: jp.orient });
+  if (o.mode === 'original' && passable) return pass();
+
+  const long = Math.max(it.w, it.h);
+  const scale = o.max && long > o.max ? o.max / long : 1;
+  const canvas = await renderCanvas(it.file, scale, o.gray);
+  try {
+    const cands = [];
+    if (o.mode === 'original') {
+      cands.push(!it.isJpeg && HAS_DEFLATE ? await flateFromCanvas(canvas, o.gray) : jpegFromCanvas(canvas, o.q));
+    } else {
+      cands.push(jpegFromCanvas(canvas, o.q));
+      if (!it.isJpeg && HAS_DEFLATE) cands.push(await flateFromCanvas(canvas, o.gray));
+      if (passable && scale === 1) cands.push(pass()); // 元のJPEGのほうが小さければそのまま使う
+    }
+    return cands.reduce((a, b) => b.data.length < a.data.length ? b : a);
+  } finally {
+    canvas.width = canvas.height = 0;
+  }
+}
+
+/* ---------- PDF の組み立て ---------- */
+const pdfNum = n => String(Math.round(n * 1000) / 1000 || 0);
+function pdfText(s) { // UTF-16BE の16進文字列（日本語タイトル用）
+  let h = '<FEFF';
+  for (let i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).padStart(4, '0').toUpperCase();
+  return h + '>';
+}
+function pdfDate(d = new Date()) {
+  const p = n => String(n).padStart(2, '0'), tz = -d.getTimezoneOffset(), a = Math.abs(tz);
+  return `D:${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}${tz >= 0 ? '+' : '-'}${p(a / 60 | 0)}'${p(a % 60)}'`;
+}
+function hashBytes(u8) { let h = 0x811c9dc5; for (let i = 0; i < u8.length; i++) h = Math.imul(h ^ u8[i], 16777619); return u8.length + ':' + (h >>> 0); }
+
+// 向き（EXIF）と回転を反映した表示上の縦横
+function displaySize(img, rot) {
+  let W = img.orient >= 5 ? img.h : img.w, H = img.orient >= 5 ? img.w : img.h;
+  return rot % 180 ? [H, W] : [W, H];
+}
+function pageLayout(W, H, o) {
+  const m = o.margin * 72 / 25.4;
+  if (o.paper === 'fit') { // 長辺を A4 の長辺に揃える
+    const s = (841.89 - 2 * m) / Math.max(W, H), iw = W * s, ih = H * s;
+    return { pw: iw + 2 * m, ph: ih + 2 * m, box: { x: m, y: m, w: iw, h: ih } };
+  }
+  const [a, b] = PAPER[o.paper];
+  const land = o.orient === 'landscape' || (o.orient === 'auto' && W > H);
+  const pw = land ? b : a, ph = land ? a : b;
+  const s = Math.min((pw - 2 * m) / W, (ph - 2 * m) / H), iw = W * s, ih = H * s;
+  return { pw, ph, box: { x: (pw - iw) / 2, y: (ph - ih) / 2, w: iw, h: ih } };
+}
+// 画像空間 (u,v)∈[0,1]² → ページ座標 の変換行列。EXIFの向きとユーザーの回転をまとめて表現する
+function imageMatrix(img, rot, box) {
+  const { w, h, orient } = img, [W] = displaySize(img, rot), s = box.w / W;
+  const map = (u, v) => {
+    const x = u * w, y = (1 - v) * h; let X, Y;
+    switch (orient) {
+      case 2: X = w - x; Y = y; break;
+      case 3: X = w - x; Y = h - y; break;
+      case 4: X = x; Y = h - y; break;
+      case 5: X = y; Y = x; break;
+      case 6: X = h - y; Y = x; break;
+      case 7: X = h - y; Y = w - x; break;
+      case 8: X = y; Y = w - x; break;
+      default: X = x; Y = y;
+    }
+    let cw = orient >= 5 ? h : w, ch = orient >= 5 ? w : h;
+    for (let k = 0; k < rot / 90; k++) { [X, Y] = [ch - Y, X]; [cw, ch] = [ch, cw]; } // 右に90°ずつ
+    return [box.x + X * s, box.y + (ch - Y) * s];
+  };
+  const p0 = map(0, 0), p1 = map(1, 0), p2 = map(0, 1);
+  return [p1[0] - p0[0], p1[1] - p0[1], p2[0] - p0[0], p2[1] - p0[1], p0[0], p0[1]];
+}
+
+class PdfWriter {
+  constructor() { this.blobs = []; this.pending = []; this.pos = 0; this.offsets = []; this.nextId = 1; }
+  alloc() { return this.nextId++; }
+  raw(x) { const u = typeof x === 'string' ? latin1(x) : x; this.pending.push(u); this.pos += u.length; }
+  obj(id, dict, stream) {
+    this.offsets[id] = this.pos;
+    if (stream) { this.raw(`${id} 0 obj\n${dict}\nstream\n`); this.raw(stream); this.raw('\nendstream\nendobj\n'); }
+    else this.raw(`${id} 0 obj\n${dict}\nendobj\n`);
+  }
+  flush() { if (this.pending.length) { this.blobs.push(new Blob(this.pending)); this.pending = []; } } // メモリを溜めすぎない
+}
+
+async function buildPdf(items, o, title, onPage) {
+  const pw = new PdfWriter();
+  pw.raw('%PDF-1.5\n%\xE2\xE3\xCF\xD3\n');
+  const catalogId = pw.alloc(), pagesId = pw.alloc(), infoId = pw.alloc(), kids = [], iccIds = new Map();
+  for (let i = 0; i < items.length; i++) {
+    if (onPage) onPage(i);
+    const it = items[i], img = await encodeItem(it, o);
+    let cs = img.comps === 1 ? '/DeviceGray' : '/DeviceRGB';
+    if (img.icc) {
+      const key = hashBytes(img.icc);
+      if (!iccIds.has(key)) {
+        const id = pw.alloc(); iccIds.set(key, id);
+        pw.obj(id, `<< /N ${img.comps} /Alternate ${cs} /Length ${img.icc.length} >>`, img.icc);
+      }
+      cs = `[/ICCBased ${iccIds.get(key)} 0 R]`;
+    }
+    const [W, H] = displaySize(img, it.rot), lay = pageLayout(W, H, o);
+    const content = `q ${imageMatrix(img, it.rot, lay.box).map(pdfNum).join(' ')} cm /Im0 Do Q`;
+    const pageId = pw.alloc(), contId = pw.alloc(), imId = pw.alloc();
+    pw.obj(imId, `<< /Type /XObject /Subtype /Image /Width ${img.w} /Height ${img.h} /ColorSpace ${cs} /BitsPerComponent 8 /Filter /${img.filter}${img.parms ? ' /DecodeParms ' + img.parms : ''} /Length ${img.data.length} >>`, img.data);
+    pw.obj(contId, `<< /Length ${content.length} >>`, latin1(content));
+    pw.obj(pageId, `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${pdfNum(lay.pw)} ${pdfNum(lay.ph)}] /Resources << /XObject << /Im0 ${imId} 0 R >> >> /Contents ${contId} 0 R >>`);
+    kids.push(pageId);
+    pw.flush();
+  }
+  pw.obj(pagesId, `<< /Type /Pages /Kids [${kids.map(k => k + ' 0 R').join(' ')}] /Count ${kids.length} >>`);
+  pw.obj(catalogId, `<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+  pw.obj(infoId, `<< /Title ${pdfText(title)} /Producer (file-tools) /CreationDate (${pdfDate()}) >>`);
+  const xref = pw.pos, n = pw.nextId;
+  let x = `xref\n0 ${n}\n0000000000 65535 f \n`;
+  for (let id = 1; id < n; id++) x += String(pw.offsets[id]).padStart(10, '0') + ' 00000 n \n';
+  x += `trailer\n<< /Size ${n} /Root ${catalogId} 0 R /Info ${infoId} 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  pw.raw(x); pw.flush();
+  return new Blob(pw.blobs, { type: 'application/pdf' });
+}
+
+/* ---------- 作成ボタン ---------- */
+function setProgress(done, total, label) {
+  $('#progress').hidden = false;
+  $('#pbar').style.width = (total ? done / total * 100 : 0) + '%';
+  $('#ptext').textContent = label;
+}
+function saveResult() { downloadUrl(state.url, state.outName); }
+
+$('#make').addEventListener('click', async () => {
+  const items = list.ok;
+  if (!items.length || state.busy) return;
+  const o = getOpts();
+  const base = sanitize($('#fname').value) || $('#fname').placeholder || 'images';
+  state.busy = true; list.setBusy(true);
+  $('#result').hidden = true;
+  if (state.url) { URL.revokeObjectURL(state.url); state.url = null; }
+  try {
+    let blob, isZip = false;
+    if (o.output === 'each' && items.length > 1) {
+      const files = [], name = uniqueNamer();
+      for (let i = 0; i < items.length; i++) {
+        setProgress(i, items.length, `${i + 1} / ${items.length} 枚目を処理中…`);
+        const s = sanitize(stem(items[i].name)) || 'image';
+        files.push({ name: name(s, '.pdf'), blob: await buildPdf([items[i]], o, s) });
+      }
+      setProgress(items.length, items.length, 'ZIPにまとめています…');
+      blob = await makeZip(files); isZip = true;
+    } else {
+      blob = await buildPdf(items, o, base, i => setProgress(i, items.length, `${i + 1} / ${items.length} 枚目を処理中…`));
+    }
+    state.blob = blob;
+    state.url = URL.createObjectURL(blob);
+    state.outName = base + (isZip ? '.zip' : '.pdf');
+    setProgress(1, 1, '');
+    saveResult();
+    showResult(items, blob, isZip);
+  } catch (e) {
+    console.error(e);
+    toast('エラーが発生しました：' + (e && e.message || e));
+  } finally {
+    state.busy = false; $('#progress').hidden = true; list.setBusy(false);
+  }
+});
+
+function showResult(items, blob, isZip) {
+  const inSize = items.reduce((s, i) => s + i.size, 0), out = blob.size;
+  const pct = Math.round(Math.abs(1 - out / inSize) * 100);
+  const file = new File([blob], state.outName, { type: blob.type });
+  const r = $('#result');
+  r.innerHTML = `<div class="head">✓ 保存しました</div>
+    <div class="line"></div>
+    <div class="small muted file"></div>
+    ${out > inSize ? '<div class="small muted">小さくしたいときは「標準」や「小さめ」を選んでください。</div>' : ''}
+    <div class="btns"><button type="button" class="btn" id="again">もう一度保存</button>${isZip ? '' : '<button type="button" class="btn" id="preview">開いて確認</button>'}${canShareFiles([file]) ? '<button type="button" class="btn" id="share">共有</button>' : ''}</div>`;
+  r.querySelector('.line').textContent = `${items.length}${isZip ? ' ファイル' : ' ページ'} ・ ${fmtSize(inSize)} → ${fmtSize(out)}（` +
+    (out <= inSize ? `${pct}% 削減` : `元より ${pct}% 増`) + '）';
+  r.querySelector('.file').textContent = `${state.outName}（ダウンロードフォルダ）`;
+  r.querySelector('#again').addEventListener('click', saveResult);
+  const pv = r.querySelector('#preview');
+  if (pv) pv.addEventListener('click', () => window.open(state.url, '_blank'));
+  const sh = r.querySelector('#share');
+  if (sh) sh.addEventListener('click', () => shareFiles([file]));
+  r.hidden = false;
+}
+
+loadSettings();
+updateSettingsUi();
+refresh();
+</script>
+</body>
+</html>

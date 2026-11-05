@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QRコード作成｜ファイルツール箱</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/common.css">
+<style>
+.qr-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start;max-width:1000px}
+@media (max-width:820px){.qr-layout{grid-template-columns:1fr}}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow)}
+.box h2{font-size:13px;color:var(--muted);margin:18px 0 8px;font-weight:600}
+.box h2:first-child{margin-top:0}
+.fields{margin-top:12px}
+.row{grid-template-columns:110px minmax(0,1fr)}
+.check{display:flex;gap:8px;align-items:center;font-size:13px;margin:8px 0 0}
+.check input{accent-color:var(--accent)}
+.pw{display:flex;gap:6px}
+.pw input{flex:1}
+.colors{display:flex;gap:8px;align-items:center}
+.colors input[type=color]{width:44px;height:32px;padding:2px;border:1px solid var(--line-strong);border-radius:8px;background:var(--panel)}
+.preview{position:sticky;top:16px;text-align:center}
+.qr-frame{display:grid;place-items:center;min-height:280px;border-radius:12px;background:repeating-conic-gradient(var(--thumb-bg) 0 25%,transparent 0 50%) 0 0/16px 16px}
+.qr-frame canvas{width:260px;height:260px;image-rendering:pixelated;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.qr-frame .empty{color:var(--muted);font-size:13px;padding:20px}
+.info{font-size:12px;color:var(--muted);margin:10px 0 0;min-height:1.6em}
+.save{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.save .btn{justify-content:center;padding:8px}
+.save .primary{grid-column:1 / -1;padding:10px;font-size:15px}
+.count{font-size:12px;color:var(--muted);text-align:right;margin-top:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="./">← ツール箱にもどる</a>
+    <h1>QRコード作成</h1>
+    <p>URL・文章・Wi-Fi・連絡先を QR コードにします。入力した内容はこの端末の中だけで使われます。</p>
+  </header>
+
+  <div class="qr-layout">
+    <form class="box" id="form" onsubmit="return false">
+      <h2>何をQRコードにする？</h2>
+      <div class="seg">
+        <label><input type="radio" name="kind" value="text" checked>URL・文章</label>
+        <label><input type="radio" name="kind" value="wifi">Wi-Fi</label>
+        <label><input type="radio" name="kind" value="contact">連絡先</label>
+      </div>
+
+      <div class="fields" data-kind="text">
+        <textarea id="text" rows="4" placeholder="例）https://example.com や、伝えたい文章" spellcheck="false"></textarea>
+        <div class="count" id="count"></div>
+      </div>
+
+      <div class="fields" data-kind="wifi" hidden>
+        <div class="row"><span>ネットワーク名</span><input type="text" id="ssid" placeholder="SSID" autocomplete="off" spellcheck="false"></div>
+        <div class="row"><span>パスワード</span><div class="pw"><input type="password" id="wpass" autocomplete="off" spellcheck="false"><button type="button" class="btn" id="showPw">表示</button></div></div>
+        <div class="row"><span>暗号化</span>
+          <select id="wsec"><option value="WPA" selected>WPA / WPA2 / WPA3（ふつうはこれ）</option><option value="WEP">WEP</option><option value="nopass">なし（パスワードなし）</option></select>
+        </div>
+        <label class="check"><input type="checkbox" id="whidden">ネットワーク名を隠している（ステルス）</label>
+        <p class="note">スマホのカメラで読み取ると、パスワードを入れずに Wi-Fi につながります。</p>
+      </div>
+
+      <div class="fields" data-kind="contact" hidden>
+        <div class="row"><span>姓</span><input type="text" id="cLast" autocomplete="off"></div>
+        <div class="row"><span>名</span><input type="text" id="cFirst" autocomplete="off"></div>
+        <div class="row"><span>電話</span><input type="tel" id="cTel" autocomplete="off"></div>
+        <div class="row"><span>メール</span><input type="email" id="cMail" autocomplete="off"></div>
+        <div class="row"><span>会社・学校</span><input type="text" id="cOrg" autocomplete="off"></div>
+        <div class="row"><span>URL</span><input type="url" id="cUrl" autocomplete="off"></div>
+        <p class="note">読み取ると、スマホの連絡先にそのまま追加できます。</p>
+      </div>
+
+      <h2>見た目</h2>
+      <div class="row"><span>汚れへの強さ</span>
+        <select name="ecl">
+          <option value="L">低（模様が細かくならない）</option><option value="M" selected>標準</option>
+          <option value="Q">やや高い</option><option value="H">高い（印刷して貼るなら）</option>
+        </select>
+      </div>
+      <div class="row"><span>色</span>
+        <div class="colors">
+          <input type="color" name="fg" value="#000000" aria-label="模様の色"><span class="small muted">模様</span>
+          <input type="color" name="bg" value="#ffffff" aria-label="背景の色"><span class="small muted">背景</span>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" name="transparent">背景を透明にする（PNG・SVG）</label>
+      <div class="row"><span>まわりの余白</span>
+        <select name="margin"><option value="0">なし</option><option value="2">狭い</option><option value="4" selected>標準（おすすめ）</option><option value="6">広い</option></select>
+      </div>
+      <div class="row"><span>保存する大きさ</span>
+        <select name="px"><option value="256">小（約 256px）</option><option value="512">中（約 512px）</option><option value="1024" selected>大（約 1024px）</option><option value="2048">特大（約 2048px・印刷向け）</option></select>
+      </div>
+    </form>
+
+    <aside class="box preview">
+      <div class="qr-frame" id="frame"><canvas id="qr" width="260" height="260" hidden></canvas><div class="empty" id="empty">左に入力すると、ここに QR コードが出ます</div></div>
+      <p class="info" id="info"></p>
+      <p class="warn" id="warn" hidden></p>
+      <div class="save">
+        <button type="button" class="primary" id="savePng" disabled>PNG で保存</button>
+        <button type="button" class="btn" id="saveSvg" disabled>SVG で保存</button>
+        <button type="button" class="btn" id="copy" disabled>画像をコピー</button>
+        <button type="button" class="btn" id="share" hidden disabled>共有</button>
+      </div>
+      <p class="note">SVG は拡大してもぼやけない形式です（印刷物やデザイン向け）。</p>
+    </aside>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/qrcode.js"></script>
+<script>
+'use strict';
+const form = $('#form'), SETTINGS_KEY = 'qr-settings-v1';
+let current = null; // { q, text, label }
+
+/* ---------- 入力から QR にする文字を作る ---------- */
+// Wi-Fi の書式では \ ; , : " の前に \ を付ける決まり
+const wifiEsc = s => s.replace(/([\\;,:"])/g, '\\$1');
+// 連絡先（vCard）では \ , ; と改行をエスケープする
+const vEsc = s => s.replace(/([\\,;])/g, '\\$1').replace(/\r?\n/g, '\\n');
+const val = id => $('#' + id).value.trim();
+
+function buildText() {
+  const kind = form.elements.kind.value;
+  if (kind === 'text') {
+    const t = $('#text').value;
+    return { text: t.trim() ? t : '', label: t.trim().replace(/^https?:\/\//, '').slice(0, 24) };
+  }
+  if (kind === 'wifi') {
+    const ssid = $('#ssid').value, sec = $('#wsec').value;
+    if (!ssid) return { text: '' };
+    const pass = sec === 'nopass' ? '' : `P:${wifiEsc($('#wpass').value)};`;
+    return { text: `WIFI:T:${sec};S:${wifiEsc(ssid)};${pass}${$('#whidden').checked ? 'H:true;' : ''};`, label: 'WiFi_' + ssid };
+  }
+  const last = val('cLast'), first = val('cFirst');
+  const lines = [];
+  if (last || first) lines.push(`N:${vEsc(last)};${vEsc(first)};;;`, `FN:${vEsc([last, first].filter(Boolean).join(' '))}`);
+  if (val('cOrg')) lines.push(`ORG:${vEsc(val('cOrg'))}`);
+  if (val('cTel')) lines.push(`TEL;TYPE=CELL:${vEsc(val('cTel'))}`);
+  if (val('cMail')) lines.push(`EMAIL:${vEsc(val('cMail'))}`);
+  if (val('cUrl')) lines.push(`URL:${vEsc(val('cUrl'))}`);
+  if (!lines.length) return { text: '' };
+  return { text: ['BEGIN:VCARD', 'VERSION:3.0', ...lines, 'END:VCARD'].join('\r\n'), label: [last, first].join('') || '連絡先' };
+}
+
+/* ---------- 描く ---------- */
+function opts() {
+  const f = form.elements;
+  return { ecl: f.ecl.value, fg: f.fg.value, bg: f.bg.value, transparent: f.transparent.checked, margin: +f.margin.value, px: +f.px.value };
+}
+function drawQr(canvas, q, cell, o) {
+  const total = q.size + o.margin * 2;
+  canvas.width = canvas.height = total * cell;
+  const x = canvas.getContext('2d');
+  x.clearRect(0, 0, canvas.width, canvas.height);
+  if (!o.transparent) { x.fillStyle = o.bg; x.fillRect(0, 0, canvas.width, canvas.height); }
+  x.fillStyle = o.fg;
+  for (let r = 0; r < q.size; r++) {
+    for (let c = 0; c < q.size; c++) {
+      if (!q.get(c, r)) continue;
+      let run = 1; // 横に続く黒マスはまとめて塗る
+      while (c + run < q.size && q.get(c + run, r)) run++;
+      x.fillRect((c + o.margin) * cell, (r + o.margin) * cell, run * cell, cell);
+      c += run - 1;
+    }
+  }
+  return canvas;
+}
+function toSvg(q, o) {
+  const total = q.size + o.margin * 2;
+  let d = '';
+  for (let r = 0; r < q.size; r++) {
+    for (let c = 0; c < q.size; c++) {
+      if (!q.get(c, r)) continue;
+      let run = 1;
+      while (c + run < q.size && q.get(c + run, r)) run++;
+      d += `M${c + o.margin} ${r + o.margin}h${run}v1h-${run}z`;
+      c += run - 1;
+    }
+  }
+  const bg = o.transparent ? '' : `<rect width="${total}" height="${total}" fill="${o.bg}"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}" width="${total * 8}" height="${total * 8}" shape-rendering="crispEdges">${bg}<path d="${d}" fill="${o.fg}"/></svg>`;
+}
+
+// 色の明るさ（0〜1）とコントラスト比
+function luminance(hex) {
+  const v = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+}
+
+function render() {
+  const kind = form.elements.kind.value;
+  for (const el of document.querySelectorAll('.fields')) el.hidden = el.dataset.kind !== kind;
+  const { text, label } = buildText(), o = opts();
+  const bytes = new TextEncoder().encode(text).length;
+  $('#count').textContent = text && kind === 'text' ? `${$('#text').value.length} 文字` : '';
+  const warn = [];
+  let q = null;
+  if (text) {
+    q = QR.encode(text, o.ecl);
+    if (!q) warn.push(`長すぎて QR コードにできません（今 ${bytes} バイト。日本語なら約 ${Math.floor(QR.maxBytes(o.ecl) / 3)} 文字、英数字なら約 ${QR.maxBytes(o.ecl)} 文字まで）。「汚れへの強さ」を下げると少し増えます。`);
+  }
+  current = q ? { q, text, label } : null;
+  $('#qr').hidden = !q; $('#empty').hidden = !!q;
+  for (const id of ['savePng', 'saveSvg', 'copy', 'share']) $('#' + id).disabled = !q;
+  if (q) {
+    drawQr($('#qr'), q, Math.max(1, Math.floor(520 / (q.size + o.margin * 2))), o);
+    $('#info').textContent = `${q.size}×${q.size} マス（バージョン ${q.version}）・保存すると約 ${pngCell(q, o) * (q.size + o.margin * 2)}px`;
+    const lf = luminance(o.fg), lb = luminance(o.bg), ratio = (Math.max(lf, lb) + 0.05) / (Math.min(lf, lb) + 0.05);
+    if (lf > lb && !o.transparent) warn.push('模様の色が背景より明るいと、読み取れないアプリがあります。模様は濃い色がおすすめです。');
+    else if (ratio < 3) warn.push('模様と背景の色が近いため、読み取りにくいかもしれません。');
+    if (o.margin < 2) warn.push('余白が狭いと読み取りにくくなります。まわりに白い部分がない場所に貼るなら「標準」を選んでください。');
+    if (q.size > 77) warn.push('模様が細かいので、小さく印刷すると読み取りにくくなります。');
+  } else $('#info').textContent = '';
+  $('#warn').hidden = !warn.length; $('#warn').textContent = warn.join(' ');
+}
+const pngCell = (q, o) => Math.max(1, Math.round(o.px / (q.size + o.margin * 2)));
+
+/* ---------- 保存・コピー・共有 ---------- */
+function fileBase() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const label = current && sanitize(current.label || '').replace(/[\s.]+/g, '_').slice(0, 24);
+  return 'QR_' + (label || `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`);
+}
+function pngBlob() {
+  const o = opts(), c = drawQr(newCanvas(1, 1), current.q, pngCell(current.q, o), o);
+  return new Blob([encodeCanvas(c, 'image/png')], { type: 'image/png' });
+}
+$('#savePng').addEventListener('click', () => current && saveBlob(pngBlob(), fileBase() + '.png'));
+$('#saveSvg').addEventListener('click', () => current && saveBlob(new Blob([toSvg(current.q, opts())], { type: 'image/svg+xml' }), fileBase() + '.svg'));
+$('#copy').addEventListener('click', async () => {
+  if (!current) return;
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob() })]);
+    toast('QR コードの画像をコピーしました。貼り付けて使えます');
+  } catch (e) { toast('このブラウザでは画像をコピーできませんでした。PNG で保存してください'); }
+});
+if (typeof ClipboardItem === 'undefined' || !navigator.clipboard || !navigator.clipboard.write) $('#copy').hidden = true;
+$('#share').hidden = !canShareFiles([new File([''], 'a.png', { type: 'image/png' })]);
+$('#share').addEventListener('click', () => current && shareFiles([new File([pngBlob()], fileBase() + '.png', { type: 'image/png' })]));
+$('#showPw').addEventListener('click', () => {
+  const p = $('#wpass'), show = p.type === 'password';
+  p.type = show ? 'text' : 'password'; $('#showPw').textContent = show ? '隠す' : '表示';
+});
+
+/* ---------- 設定の記憶（入力した内容は覚えない） ---------- */
+function saveSettings() {
+  try {
+    const f = form.elements;
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ kind: f.kind.value, ecl: f.ecl.value, fg: f.fg.value, bg: f.bg.value, transparent: f.transparent.checked, margin: f.margin.value, px: f.px.value }));
+  } catch (e) { /* 保存できなくても動作には影響なし */ }
+}
+function loadSettings() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'), f = form.elements;
+    for (const k of ['kind', 'ecl', 'fg', 'bg', 'margin', 'px']) if (d[k] != null) f[k].value = d[k];
+    if (d.transparent != null) f.transparent.checked = d.transparent;
+  } catch (e) { /* 初回やブロック時は既定値のまま */ }
+}
+form.addEventListener('input', () => { render(); saveSettings(); });
+form.addEventListener('change', () => { render(); saveSettings(); });
+
+loadSettings();
+render();
+</script>
+</body>
+</html>

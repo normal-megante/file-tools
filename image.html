@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>画像の変換・圧縮｜ファイルツール箱</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/common.css">
+<style>
+/* 回転・切り抜きの窓 */
+.ed-stage{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;padding:16px;background:var(--thumb-bg);overflow:hidden}
+.ed-wrap{position:relative;line-height:0;overflow:hidden;touch-action:none}
+.ed-wrap canvas{display:block;max-width:100%;max-height:min(62vh,640px)}
+.crop{position:absolute;outline:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,.55);cursor:move;touch-action:none}
+.crop::before,.crop::after{content:"";position:absolute;inset:0;pointer-events:none;border:solid rgba(255,255,255,.45);border-width:0 1px}
+.crop::before{left:33.33%;right:33.33%}
+.crop::after{top:33.33%;bottom:33.33%;border-width:1px 0}
+/* つまみは枠の内側に置く（画像の端でも切れずにつかめるように） */
+.crop i{position:absolute;width:26px;height:26px;touch-action:none}
+.crop i::after{content:"";position:absolute;left:8px;top:8px;width:10px;height:10px;background:#fff;border-radius:2px;box-shadow:0 0 2px rgba(0,0,0,.6)}
+.crop i[data-h=nw]{left:0;top:0;cursor:nwse-resize}.crop i[data-h=n]{left:50%;top:0;margin-left:-13px;cursor:ns-resize}
+.crop i[data-h=ne]{right:0;top:0;cursor:nesw-resize}.crop i[data-h=e]{right:0;top:50%;margin-top:-13px;cursor:ew-resize}
+.crop i[data-h=se]{right:0;bottom:0;cursor:nwse-resize}.crop i[data-h=s]{left:50%;bottom:0;margin-left:-13px;cursor:ns-resize}
+.crop i[data-h=sw]{left:0;bottom:0;cursor:nesw-resize}.crop i[data-h=w]{left:0;top:50%;margin-top:-13px;cursor:ew-resize}
+.crop.locked i[data-h=n],.crop.locked i[data-h=e],.crop.locked i[data-h=s],.crop.locked i[data-h=w]{display:none}
+.ed-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line)}
+.ed-tools select{width:auto}
+.ed-size{font-size:12px;color:var(--muted);margin-left:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="layout">
+    <section>
+      <header>
+        <a class="back" href="./">← ツール箱にもどる</a>
+        <h1>画像の変換・圧縮</h1>
+        <p>JPEG・PNG・WebP の形式変換、ファイルを軽くする、大きさの変更、回転・切り抜きができます。処理はこの端末の中だけで行われます。</p>
+      </header>
+
+      <div id="drop" class="drop" tabindex="0" role="button" aria-label="画像を追加">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div class="big" id="dropTitle"></div>
+        <div class="muted"><span class="pc-only">またはクリックして選択　（フォルダごと・Ctrl+V の貼り付けもOK）</span><span class="touch-only">写真やファイルから選べます</span></div>
+        <input type="file" id="file" accept="image/*,.jpg,.jpeg,.jfif,.png,.webp,.gif,.bmp,.avif" multiple hidden>
+      </div>
+
+      <div class="listbar" id="listbar" hidden>
+        <span id="count"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="sortName">名前順に並べる</button>
+        <button type="button" class="btn danger" id="clear">すべて削除</button>
+      </div>
+      <p class="hint" id="hint" hidden>切り抜きマークのボタンで、回転・反転・切り抜きができます。</p>
+      <div id="grid" class="grid"></div>
+
+      <div class="tips">
+        <b>ヒント</b>
+        <ul>
+          <li>撮影した場所などの情報（位置情報）は、変換すると自動で消えます。SNS に載せる前にも便利です。</li>
+          <li>「ファイルサイズの上限」を選ぶと、その大きさに収まるように画質を自動で調整します（アップロード制限の対策に）。</li>
+          <li>PNG は劣化しない形式のため、あまり小さくなりません。軽くしたいときは JPEG か WebP を選んでください。</li>
+          <li>動く GIF は、最初の1コマだけになります。</li>
+        </ul>
+      </div>
+    </section>
+
+    <aside>
+      <form id="settings" class="panel" onsubmit="return false">
+       <div class="panel-body">
+        <h2>保存する形式</h2>
+        <div class="seg">
+          <label><input type="radio" name="format" value="same" checked>元のまま</label>
+          <label><input type="radio" name="format" value="image/jpeg">JPEG</label>
+          <label><input type="radio" name="format" value="image/png">PNG</label>
+          <label><input type="radio" name="format" value="image/webp">WebP</label>
+        </div>
+        <p class="note" id="formatNote"></p>
+
+        <h2>画質</h2>
+        <div class="range"><input type="range" name="q" id="q" min="10" max="100" step="5" value="80"><output id="qv">80</output></div>
+        <p class="note" id="qNote">数字が小さいほど軽くなります（80前後がおすすめ）</p>
+
+        <h2>ファイルサイズの上限</h2>
+        <select name="limit">
+          <option value="0" selected>指定しない</option>
+          <option value="102400">100 KB 以下</option><option value="204800">200 KB 以下</option><option value="307200">300 KB 以下</option>
+          <option value="512000">500 KB 以下</option><option value="1048576">1 MB 以下</option><option value="2097152">2 MB 以下</option>
+          <option value="3145728">3 MB 以下</option><option value="5242880">5 MB 以下</option><option value="10485760">10 MB 以下</option>
+        </select>
+
+        <h2>大きさ</h2>
+        <select name="size">
+          <option value="keep" selected>変えない</option>
+          <option value="long:4000">長辺 4000px まで</option><option value="long:3000">長辺 3000px まで</option>
+          <option value="long:2000">長辺 2000px まで</option><option value="long:1600">長辺 1600px まで</option>
+          <option value="long:1280">長辺 1280px まで</option><option value="long:1080">長辺 1080px まで</option>
+          <option value="long:800">長辺 800px まで</option><option value="long:640">長辺 640px まで</option>
+          <option value="pct:75">75%</option><option value="pct:50">50%</option><option value="pct:25">25%</option>
+        </select>
+        <p class="note">「長辺」は縦と横の長いほう。もともと小さい画像は大きくしません。</p>
+
+        <h2>保存のしかた</h2>
+        <div class="seg">
+          <label><input type="radio" name="save" value="each">1枚ずつ</label>
+          <label><input type="radio" name="save" value="zip">ZIPにまとめる</label>
+        </div>
+       </div>
+       <div class="panel-foot">
+        <button type="button" id="make" class="primary" disabled>変換して保存</button>
+        <div id="progress" class="progress" hidden><div class="bar"><i id="pbar"></i></div><div id="ptext" class="ptext"></div></div>
+        <div id="result" class="result" hidden></div>
+       </div>
+      </form>
+    </aside>
+  </div>
+</div>
+
+<!-- 回転・切り抜きの窓 -->
+<div class="modal" id="editor" hidden role="dialog" aria-modal="true" aria-labelledby="edTitle">
+  <div class="modal-box">
+    <div class="modal-head"><b id="edTitle">回転・切り抜き</b><span class="spacer"></span><span class="small muted" id="edName"></span></div>
+    <div class="ed-stage">
+      <div class="ed-wrap" id="edWrap">
+        <canvas id="edCanvas"></canvas>
+        <div class="crop" id="cropBox"><i data-h="nw"></i><i data-h="n"></i><i data-h="ne"></i><i data-h="e"></i><i data-h="se"></i><i data-h="s"></i><i data-h="sw"></i><i data-h="w"></i></div>
+      </div>
+    </div>
+    <div class="ed-tools">
+      <button type="button" class="btn" data-ed="rotl" title="左に90°回転"></button>
+      <button type="button" class="btn" data-ed="rotr" title="右に90°回転"></button>
+      <button type="button" class="btn" data-ed="flip" title="左右反転"></button>
+      <select id="aspect" aria-label="切り抜きの比率">
+        <option value="free">比率：自由</option><option value="orig">比率：元の画像</option><option value="1">1:1（正方形）</option>
+        <option value="1.3333">4:3</option><option value="0.75">3:4</option><option value="1.7778">16:9</option><option value="0.5625">9:16</option>
+        <option value="0.7071">A4 縦</option><option value="1.4142">A4 横</option>
+      </select>
+      <button type="button" class="btn" data-ed="reset">元に戻す</button>
+      <span class="ed-size" id="edSize"></span>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-ed="cancel">キャンセル</button>
+      <button type="button" class="primary" data-ed="ok">決定</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+'use strict';
+const state = { busy: false, outputs: [] };
+const CAN_WEBP = canEncode('image/webp');
+const EXT = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
+const FORMAT_NAME = { 'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/webp': 'WebP' };
+
+/* ---------- 画像の一覧 ---------- */
+const list = new ImageList($('#grid'), {
+  actions: ['rotl', 'rotr', 'crop', 'del'], numbered: false,
+  onChange: refresh, onAction: (it, act) => { if (act === 'crop') openEditor(it); },
+});
+setupFileInput({
+  drop: $('#drop'), input: $('#file'),
+  onFiles: files => list.add(files),
+  isBusy: () => state.busy, isInternalDrag: () => list.isDragging,
+});
+$('#sortName').addEventListener('click', () => list.sortByName());
+$('#clear').addEventListener('click', () => list.clear());
+
+function refresh() {
+  const items = list.items, ok = list.ok, errors = list.errors;
+  $('#listbar').hidden = $('#hint').hidden = !items.length;
+  $('#drop').classList.toggle('compact', items.length > 0);
+  const touch = matchMedia('(pointer:coarse)').matches;
+  $('#dropTitle').textContent = items.length ? (touch ? 'タップして画像を追加' : '画像を追加（ドラッグ＆ドロップ / クリック）')
+    : (touch ? 'タップして画像を選ぶ' : 'ここに画像をドラッグ＆ドロップ');
+  $('#count').textContent = `${ok.length} 枚（合計 ${fmtSize(ok.reduce((s, i) => s + i.size, 0))}）` +
+    (list.loading ? '　読み込み中…' : '') + (errors ? `　読み込めない ${errors} 件` : '');
+  $('#make').disabled = state.busy || list.loading || !ok.length;
+}
+
+/* ---------- 設定 ---------- */
+const form = $('#settings'), SETTINGS_KEY = 'image-convert-settings-v1';
+if (!CAN_WEBP) form.querySelector('input[value="image/webp"]').disabled = true;
+form.elements.save.value = matchMedia('(pointer:coarse)').matches ? 'each' : 'zip';
+function updateSettingsUi() {
+  const f = form.elements, fmt = f.format.value, png = fmt === 'image/png';
+  $('#qv').textContent = f.q.value;
+  f.q.disabled = png;
+  $('#qNote').textContent = png ? 'PNG は劣化しない形式なので、画質の設定はありません' : '数字が小さいほど軽くなります（80前後がおすすめ）';
+  f.limit.disabled = png;
+  $('#formatNote').textContent = fmt === 'same' ? 'JPEG・PNG・WebP はそのままの形式で、それ以外は JPEG（GIF・BMP は PNG）で保存します。'
+    : fmt === 'image/jpeg' ? '写真向き。いちばん多くの場所で使えます。透明な部分は白になります。'
+    : png ? '劣化しない形式。スクリーンショットや図、透明な部分を残したいときに。'
+    : 'JPEG より軽くなりやすい新しい形式。透明な部分も残せます。' + (CAN_WEBP ? '' : '（このブラウザでは使えません）');
+}
+function saveSettings() {
+  try {
+    const d = {};
+    for (const el of form.elements) {
+      if (!el.name) continue;
+      if (el.type === 'radio') { if (el.checked) d[el.name] = el.value; } else d[el.name] = el.value;
+    }
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(d));
+  } catch (e) { /* 保存できなくても動作には影響なし */ }
+}
+function loadSettings() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    for (const [k, v] of Object.entries(d)) {
+      const el = form.elements[k]; if (!el) continue;
+      const valid = el instanceof RadioNodeList ? [...el].some(r => r.value === v && !r.disabled)
+        : el.tagName === 'SELECT' ? [...el.options].some(o => o.value === v) : true;
+      if (valid) el.value = v;
+    }
+  } catch (e) { /* 初回やブロック時は既定値のまま */ }
+}
+form.addEventListener('input', () => { updateSettingsUi(); saveSettings(); });
+form.addEventListener('change', () => { updateSettingsUi(); saveSettings(); });
+function getOpts() {
+  const f = form.elements;
+  return { format: f.format.value, q: +f.q.value / 100, limit: +f.limit.value, size: f.size.value, save: f.save.value };
+}
+
+/* ---------- 変換 ---------- */
+function outputType(it, format) {
+  if (format !== 'same') return format;
+  const t = it.file.type;
+  if (t === 'image/jpeg' || (it.isJpeg && !t)) return 'image/jpeg';
+  if (t === 'image/png' || t === 'image/gif' || t === 'image/bmp') return 'image/png';
+  if (t === 'image/webp') return CAN_WEBP ? 'image/webp' : 'image/jpeg';
+  return 'image/jpeg';
+}
+function targetSize(w, h, size) {
+  const [kind, val] = size.split(':'), n = +val;
+  let s = 1;
+  if (kind === 'long' && Math.max(w, h) > n) s = n / Math.max(w, h);
+  if (kind === 'pct') s = n / 100;
+  return [Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s))];
+}
+
+async function convertItem(it, o) {
+  const type = outputType(it, o.format);
+  const bmp = await createImageBitmap(it.file, { imageOrientation: 'from-image' });
+  const full = drawEdited(newCanvas(1, 1), bmp, it, 1); // 回転・反転・切り抜きを反映（元の解像度）
+  bmp.close();
+  const bg = type === 'image/jpeg' ? '#fff' : null;   // JPEG は透明にできないので白
+  let [tw, th] = targetSize(full.width, full.height, o.size);
+  let canvas = downscale(full, tw, th, bg);
+  const enc = q => encodeCanvas(canvas, type, q);
+  try {
+    if (type === 'image/png') return { type, data: enc(), w: tw, h: th };
+    let data = enc(o.q);
+    if (!o.limit || data.length <= o.limit) return { type, data, w: tw, h: th };
+    // 上限に収まるまで、画質 → それでもだめなら大きさ の順に下げる
+    const MIN_Q = 0.3;
+    for (let round = 0; round < 10; round++) {
+      const low = enc(MIN_Q);
+      if (low.length <= o.limit) {
+        let lo = MIN_Q, hi = o.q, best = low;
+        for (let i = 0; i < 6; i++) {
+          const mid = (lo + hi) / 2, d = enc(mid);
+          if (d.length <= o.limit) { best = d; lo = mid; } else hi = mid;
+        }
+        return { type, data: best, w: tw, h: th, shrunk: round > 0 };
+      }
+      const f = Math.max(0.5, Math.min(0.9, Math.sqrt(o.limit / low.length) * 0.95));
+      tw = Math.max(1, Math.round(tw * f)); th = Math.max(1, Math.round(th * f));
+      canvas.width = canvas.height = 0;
+      canvas = downscale(full, tw, th, bg);
+      data = low;
+    }
+    return { type, data: enc(MIN_Q), w: tw, h: th, shrunk: true, overLimit: true };
+  } finally {
+    canvas.width = canvas.height = 0; full.width = full.height = 0;
+  }
+}
+
+function setProgress(done, total, label) {
+  $('#progress').hidden = false;
+  $('#pbar').style.width = (total ? done / total * 100 : 0) + '%';
+  $('#ptext').textContent = label;
+}
+
+$('#make').addEventListener('click', async () => {
+  const items = list.ok;
+  if (!items.length || state.busy) return;
+  const o = getOpts();
+  state.busy = true; list.setBusy(true);
+  $('#result').hidden = true;
+  try {
+    const outs = [], name = uniqueNamer();
+    let over = 0;
+    for (let i = 0; i < items.length; i++) {
+      setProgress(i, items.length, `${i + 1} / ${items.length} 枚目を変換中…`);
+      const it = items[i], r = await convertItem(it, o);
+      if (r.overLimit) over++;
+      const file = new File([r.data], name(sanitize(stem(it.name)) || 'image', EXT[r.type]), { type: r.type });
+      outs.push(file);
+      const pct = Math.round((1 - r.data.length / it.size) * 100);
+      list.setNote(it, `→ ${FORMAT_NAME[r.type]} ${fmtSize(r.data.length)}（${pct >= 0 ? pct + '% 減' : -pct + '% 増'}）${r.shrunk ? '・縮小' : ''}`);
+    }
+    state.outputs = outs;
+    setProgress(1, 1, '');
+    await saveOutputs(o.save);
+    showResult(items, outs, o, over);
+  } catch (e) {
+    console.error(e);
+    toast('エラーが発生しました：' + (e && e.message || e));
+  } finally {
+    state.busy = false; $('#progress').hidden = true; list.setBusy(false);
+  }
+});
+
+async function saveOutputs(mode) {
+  const outs = state.outputs;
+  if (outs.length > 1 && mode === 'zip') {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    saveBlob(await makeZip(outs.map(f => ({ name: f.name, blob: f }))), `画像_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.zip`);
+  } else {
+    for (const f of outs) { saveBlob(f, f.name); if (outs.length > 1) await wait(250); }
+  }
+}
+
+function showResult(items, outs, o, over) {
+  const inSize = items.reduce((s, i) => s + i.size, 0), out = outs.reduce((s, f) => s + f.size, 0);
+  const pct = Math.round(Math.abs(1 - out / inSize) * 100);
+  const r = $('#result');
+  r.innerHTML = `<div class="head">✓ 保存しました</div><div class="line"></div>
+    <div class="small muted">保存先：ダウンロードフォルダ</div>
+    ${over ? `<div class="small" style="color:var(--warn)">${over} 枚は上限まで小さくできませんでした（いちばん小さくした状態で保存）</div>` : ''}
+    <div class="btns"><button type="button" class="btn" id="again">もう一度保存</button>${canShareFiles(outs) ? '<button type="button" class="btn" id="share">共有</button>' : ''}</div>`;
+  r.querySelector('.line').textContent = `${outs.length} 枚 ・ ${fmtSize(inSize)} → ${fmtSize(out)}（` + (out <= inSize ? `${pct}% 削減` : `元より ${pct}% 増`) + '）';
+  r.querySelector('#again').addEventListener('click', () => saveOutputs(getOpts().save));
+  const sh = r.querySelector('#share');
+  if (sh) sh.addEventListener('click', () => shareFiles(state.outputs));
+  r.hidden = false;
+}
+
+/* ---------- 回転・切り抜きの窓 ---------- */
+const ed = { it: null, src: null, rot: 0, flip: false, crop: null, ratio: null, drag: null };
+const ASPECT_PAIR = { '1.3333': '0.75', '0.75': '1.3333', '1.7778': '0.5625', '0.5625': '1.7778', '0.7071': '1.4142', '1.4142': '0.7071' };
+for (const b of document.querySelectorAll('[data-ed=rotl],[data-ed=rotr],[data-ed=flip]')) {
+  b.innerHTML = ICON[b.dataset.ed] + ({ rotl: '左に回転', rotr: '右に回転', flip: '左右反転' })[b.dataset.ed];
+}
+
+async function openEditor(it) {
+  const bmp = await createImageBitmap(it.file, { imageOrientation: 'from-image' });
+  const s = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  ed.src = downscale(bmp, Math.max(1, Math.round(bmp.width * s)), Math.max(1, Math.round(bmp.height * s)));
+  bmp.close();
+  Object.assign(ed, { it, rot: it.rot, flip: it.flip, crop: it.crop ? { ...it.crop } : { x: 0, y: 0, w: 1, h: 1 }, ratio: null });
+  $('#aspect').value = 'free';
+  $('#edName').textContent = it.name;
+  $('#editor').hidden = false;
+  drawEditor();
+}
+function closeEditor() { $('#editor').hidden = true; if (ed.src) ed.src.width = ed.src.height = 0; ed.it = ed.src = null; }
+
+function drawEditor() {
+  drawEdited($('#edCanvas'), ed.src, { rot: ed.rot, flip: ed.flip }, 1);
+  const c = ed.crop, box = $('#cropBox');
+  box.style.left = c.x * 100 + '%'; box.style.top = c.y * 100 + '%';
+  box.style.width = c.w * 100 + '%'; box.style.height = c.h * 100 + '%';
+  box.classList.toggle('locked', !!ed.ratio);
+  const [W, H] = editorDims();
+  $('#edSize').textContent = `${Math.round(c.w * W)} × ${Math.round(c.h * H)} px`;
+}
+// 回転後の元画像の大きさ（px）
+function editorDims() { const w = ed.it.w, h = ed.it.h; return ed.rot % 180 ? [h, w] : [w, h]; }
+
+// 比率 r（横÷縦, px）の、いちばん大きい枠を真ん中に置く
+function applyRatio() {
+  const v = $('#aspect').value, [W, H] = editorDims();
+  ed.ratio = v === 'free' ? null : v === 'orig' ? W / H : +v;
+  if (ed.ratio) {
+    let w = 1, h = W / (H * ed.ratio);
+    if (h > 1) { h = 1; w = H * ed.ratio / W; }
+    ed.crop = { x: (1 - w) / 2, y: (1 - h) / 2, w, h };
+  }
+  drawEditor();
+}
+$('#aspect').addEventListener('change', applyRatio);
+
+document.querySelector('#editor').addEventListener('click', e => {
+  const b = e.target.closest('[data-ed]'); if (!b) return;
+  const act = b.dataset.ed;
+  if (act === 'rotl' || act === 'rotr') {
+    const cw = act === 'rotr';
+    ed.rot = (ed.rot + (cw !== ed.flip ? 90 : 270)) % 360;
+    ed.crop = rotateCrop(ed.crop, cw);
+    const v = $('#aspect').value;
+    if (ASPECT_PAIR[v]) { $('#aspect').value = ASPECT_PAIR[v]; ed.ratio = +ASPECT_PAIR[v]; }
+    else if (v === 'orig') ed.ratio = 1 / ed.ratio;
+  } else if (act === 'flip') {
+    ed.flip = !ed.flip;
+    ed.crop = { ...ed.crop, x: 1 - (ed.crop.x + ed.crop.w) };
+  } else if (act === 'reset') {
+    Object.assign(ed, { rot: 0, flip: false, crop: { x: 0, y: 0, w: 1, h: 1 }, ratio: null });
+    $('#aspect').value = 'free';
+  } else if (act === 'cancel') return closeEditor();
+  else if (act === 'ok') {
+    const c = ed.crop, full = c.x < 0.001 && c.y < 0.001 && c.w > 0.999 && c.h > 0.999;
+    Object.assign(ed.it, { rot: ed.rot, flip: ed.flip, crop: full ? null : { ...c } });
+    list.drawThumb(ed.it);
+    const [W, H] = editorDims();
+    list.setNote(ed.it, full && !ed.rot && !ed.flip ? '' : `編集済み（${Math.round(c.w * W)}×${Math.round(c.h * H)}）`);
+    return closeEditor();
+  }
+  drawEditor();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#editor').hidden) closeEditor(); });
+
+// 枠のドラッグ（マウスでも指でも）
+const MIN = 0.03;
+$('#cropBox').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const r = $('#edWrap').getBoundingClientRect();
+  ed.drag = { h: e.target.dataset.h || 'move', x0: e.clientX, y0: e.clientY, W: r.width, H: r.height, c0: { ...ed.crop } };
+  e.target.setPointerCapture(e.pointerId);
+});
+$('#cropBox').addEventListener('pointermove', e => {
+  const d = ed.drag; if (!d) return;
+  const dx = (e.clientX - d.x0) / d.W, dy = (e.clientY - d.y0) / d.H, c0 = d.c0;
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  if (d.h === 'move') {
+    ed.crop = { ...c0, x: clamp(c0.x + dx, 0, 1 - c0.w), y: clamp(c0.y + dy, 0, 1 - c0.h) };
+  } else if (!ed.ratio) {
+    let l = c0.x, t = c0.y, rr = c0.x + c0.w, b = c0.y + c0.h;
+    if (d.h.includes('w')) l = clamp(l + dx, 0, rr - MIN);
+    if (d.h.includes('e')) rr = clamp(rr + dx, l + MIN, 1);
+    if (d.h.includes('n')) t = clamp(t + dy, 0, b - MIN);
+    if (d.h.includes('s')) b = clamp(b + dy, t + MIN, 1);
+    ed.crop = { x: l, y: t, w: rr - l, h: b - t };
+  } else {
+    // 比率を固定：反対側の角を動かさずに、横幅に合わせて縦を決める
+    const k = d.W / (d.H * ed.ratio); // 横の割合 → 縦の割合
+    const right = d.h.includes('e'), bottom = d.h.includes('s');
+    const ax = right ? c0.x : c0.x + c0.w, ay = bottom ? c0.y : c0.y + c0.h; // 動かない角
+    let w = right ? c0.w + dx : c0.w - dx;
+    const maxW = Math.min(right ? 1 - ax : ax, (bottom ? 1 - ay : ay) / k);
+    w = clamp(w, MIN, maxW);
+    const h = w * k;
+    ed.crop = { x: right ? ax : ax - w, y: bottom ? ay : ay - h, w, h };
+  }
+  drawEditor();
+});
+const endDrag = () => { ed.drag = null; };
+$('#cropBox').addEventListener('pointerup', endDrag);
+$('#cropBox').addEventListener('pointercancel', endDrag);
+
+loadSettings();
+updateSettingsUi();
+refresh();
+</script>
+</body>
+</html>
