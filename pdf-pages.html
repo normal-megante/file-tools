@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDFのページ整理｜ファイルツール箱</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/common.css">
+<style>
+.card{position:relative}
+.card .fbar{position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--fc)}
+.card.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.thumb img{display:block;max-width:100%;max-height:100%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);pointer-events:none;-webkit-touch-callout:none}
+.thumb .nothumb{font-size:12px;color:var(--muted);text-align:center}
+.check{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.28);display:grid;place-items:center;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.card.sel .check{background:var(--accent);border-color:var(--accent)}
+.card:not(.sel) .check svg{visibility:hidden}
+.card.ghost{position:fixed;z-index:60;pointer-events:none;opacity:.92;box-shadow:0 10px 28px rgba(0,0,0,.35);transform:rotate(2deg);margin:0}
+.selbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:6px 10px;margin:0 0 10px}
+.selbar b{margin-right:4px}
+input[type=number]{width:5.5em;border:1px solid var(--line-strong);background:var(--panel);border-radius:8px;padding:5px 8px}
+.split-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pv-stage{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;padding:14px;background:var(--thumb-bg);overflow:hidden;position:relative}
+.pv-stage canvas{display:block;max-width:100%;max-height:min(72vh,800px);background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.pv-busy{position:absolute;inset:0;display:grid;place-items:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="layout">
+    <section>
+      <header>
+        <a class="back" href="./">← ツール箱にもどる</a>
+        <h1>PDFのページ整理</h1>
+        <p>PDF の結合・分割・抜き出し、ページの並べ替え・回転・削除ができます。処理はこの端末の中だけで行われます。</p>
+      </header>
+
+      <div id="drop" class="drop" tabindex="0" role="button" aria-label="PDFを追加">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div class="big" id="dropTitle"></div>
+        <div class="muted"><span class="pc-only">またはクリックして選択　（</span>画像（JPEG・PNG など）も1ページとして入れられます<span class="pc-only">）</span></div>
+        <input type="file" id="file" accept="application/pdf,.pdf,image/*" multiple hidden>
+      </div>
+
+      <div class="listbar" id="listbar" hidden>
+        <span id="count"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="undo" title="元に戻す（Ctrl+Z）">元に戻す</button>
+        <button type="button" class="btn" id="selAll">すべて選択</button>
+        <button type="button" class="btn" id="reverse">逆順にする</button>
+        <button type="button" class="btn danger" id="clear">すべて削除</button>
+      </div>
+      <p class="hint" id="hint" hidden>ページをタップすると選べます（選んだページは、まとめて回転・削除したり、そこだけ保存したりできます）。<span class="pc-only">ドラッグで並べ替え。Shift を押しながらクリックすると範囲で選べます。</span><span class="touch-only">長押ししてから動かすと並べ替えられます。</span></p>
+      <div class="selbar" id="selbar" hidden>
+        <b id="selCount"></b>
+        <button type="button" class="btn" data-sel="rotl">左に回転</button>
+        <button type="button" class="btn" data-sel="rotr">右に回転</button>
+        <button type="button" class="btn danger" data-sel="del">削除</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-sel="none">選択を解除</button>
+      </div>
+      <div id="grid" class="grid"></div>
+
+      <div class="tips">
+        <b>メモ</b>
+        <ul>
+          <li>ページの中身（文字・図・画像）はそのままコピーするので、画質は落ちず、文字も選べるままです。</li>
+          <li>左の色の線は、どのファイルのページかを表しています。</li>
+          <li>しおり（目次）やフォームの入力機能は引き継がれません（見た目はそのまま残ります）。</li>
+          <li>パスワードを入れないと開けない PDF は、まだ使えません。</li>
+        </ul>
+      </div>
+    </section>
+
+    <aside>
+      <form id="settings" class="panel" onsubmit="return false">
+       <div class="panel-body">
+        <h2>保存のしかた</h2>
+        <div class="opts">
+          <label class="opt"><input type="radio" name="how" value="merge" checked><span><span class="t">1つのPDFにまとめる</span><span class="d">並べた順番で、全部のページを1つの PDF に（結合）</span></span></label>
+          <label class="opt"><input type="radio" name="how" value="extract"><span><span class="t">選んだページだけ</span><span class="d" id="extractNote"></span></span></label>
+          <label class="opt"><input type="radio" name="how" value="split"><span><span class="t">分ける</span><span class="d">決まったページ数ごとに、別々の PDF にする（分割）</span></span></label>
+        </div>
+        <div class="custom" id="splitBox" hidden>
+          <div class="split-row"><input type="number" name="every" id="every" min="1" step="1" value="1" inputmode="numeric"><span>ページずつに分ける</span></div>
+          <p class="note" id="splitNote"></p>
+          <h2>保存のしかた</h2>
+          <div class="seg">
+            <label><input type="radio" name="save" value="each">1つずつ</label>
+            <label><input type="radio" name="save" value="zip">ZIPにまとめる</label>
+          </div>
+        </div>
+
+        <h2>ファイル名</h2>
+        <div class="fn"><input type="text" id="fname" autocomplete="off" spellcheck="false"><span id="ext">.pdf</span></div>
+       </div>
+       <div class="panel-foot">
+        <button type="button" id="make" class="primary" disabled>PDFを保存</button>
+        <div id="progress" class="progress" hidden><div class="bar"><i id="pbar"></i></div><div id="ptext" class="ptext"></div></div>
+        <div id="result" class="result" hidden></div>
+       </div>
+      </form>
+    </aside>
+  </div>
+</div>
+
+<!-- ページの確認 -->
+<div class="modal" id="preview" hidden role="dialog" aria-modal="true" aria-labelledby="pvTitle">
+  <div class="modal-box">
+    <div class="modal-head"><b id="pvTitle">ページの確認</b><span class="spacer"></span><span class="small muted" id="pvName"></span></div>
+    <div class="pv-stage">
+      <canvas id="pvCanvas" width="1" height="1"></canvas>
+      <div class="pv-busy" id="pvBusy" hidden><div class="spin"></div></div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-pv="prev">‹ 前</button>
+      <button type="button" class="btn" data-pv="next">次 ›</button>
+      <button type="button" class="btn" data-pv="rotl">左に回転</button>
+      <button type="button" class="btn" data-pv="rotr">右に回転</button>
+      <span class="spacer"></span>
+      <button type="button" class="primary" data-pv="close">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/pdfdoc.js"></script>
+<script>
+'use strict';
+// =========================================================
+// PDF のページ整理
+//   ・ページの絵（見本）は pdf.js（vendor/pdfjs）で描く
+//   ・保存は js/pdfdoc.js（ページの中身をそのままコピー）
+// =========================================================
+const grid = $('#grid'), form = $('#settings');
+const state = { files: [], items: [], seq: 0, loading: 0, busy: false, undo: [], lastClick: null, outputs: [], pdfUrl: null, outName: '', fnameTouched: false };
+const COLORS = ['#2f6fed', '#e5534b', '#2f9e6e', '#d98a1c', '#7c5cdb', '#1f9bb4', '#c4458e', '#7a8a2a'];
+ICON.zoom = SVG('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/>');
+ACTION_LABEL.zoom = '大きく見る';
+for (const b of document.querySelectorAll('[data-sel="rotl"],[data-sel="rotr"],[data-sel="del"]')) b.insertAdjacentHTML('afterbegin', ICON[b.dataset.sel]);
+
+/* ---------- pdf.js（ページの絵を描く部品）は必要になってから読み込む ---------- */
+const PDFJS_DIR = new URL('vendor/pdfjs/', location.href).href;
+let pdfjsPromise = null, pdfWorker = null;
+function pdfjs() {
+  if (!pdfjsPromise) pdfjsPromise = import('./vendor/pdfjs/pdf.min.mjs').then(lib => {
+    lib.GlobalWorkerOptions.workerSrc = PDFJS_DIR + 'pdf.worker.min.mjs';
+    pdfWorker = new lib.PDFWorker(); // ファイルが何個あっても、裏で読む係は1人で済ませる（スマホのメモリ節約）
+    return lib;
+  });
+  return pdfjsPromise;
+}
+function viewerDoc(file) {
+  if (!file.viewer) file.viewer = pdfjs().then(lib => lib.getDocument({
+    worker: pdfWorker,
+    data: file.bytes.slice(), // pdf.js は渡したデータを持っていってしまうので写しを渡す
+    cMapUrl: PDFJS_DIR + 'cmaps/', cMapPacked: true,
+    standardFontDataUrl: PDFJS_DIR + 'standard_fonts/', wasmUrl: PDFJS_DIR + 'wasm/', iccUrl: PDFJS_DIR + 'iccs/',
+    enableXfa: false,
+  }).promise);
+  return file.viewer;
+}
+
+/* ---------- ファイルを入れる ---------- */
+const isPdfFile = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+function errMessage(name, e) {
+  const code = e && e.code;
+  if (code === 'password') return `「${name}」はパスワードが必要な PDF のため、まだ使えません`;
+  if (code === 'unsupported') return `「${name}」は対応していない保護がかかっています`;
+  if (code === 'notpdf') return `「${name}」は PDF として読めませんでした`;
+  return `「${name}」を読み込めませんでした`;
+}
+// 画像は1ページの PDF にしてから入れる（JPEG はそのまま入れるので画質は落ちない）
+async function imageToPdf(f) {
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  let img = null;
+  if (bytes[0] === 0xFF && bytes[1] === 0xD8) {
+    const jp = analyzeJpeg(bytes);
+    if (jp && jp.ok) img = { w: jp.w, h: jp.h, comps: jp.comps, filter: 'DCTDecode', data: jp.data, icc: jp.icc, orient: jp.orient };
+  }
+  if (!img) {
+    const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
+    const c = newCanvas(bmp.width, bmp.height), x = c.getContext('2d', { willReadFrequently: true });
+    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(bmp, 0, 0); bmp.close();
+    const cands = [jpegFromCanvas(c, 0.92)];
+    if (HAS_DEFLATE) cands.push(await flateFromCanvas(c, false));
+    img = cands.reduce((a, b) => (b.data.length < a.data.length ? b : a));
+    c.width = c.height = 0;
+  }
+  const blob = await buildPdf([{ rot: 0 }], { paper: 'fit', margin: 0, orient: 'auto' }, stem(f.name), { encode: async () => img });
+  return new Uint8Array(await blob.arrayBuffer());
+}
+async function addFiles(list) {
+  const all = [...list];
+  const use = all.filter(f => isPdfFile(f) || isImageFile(f)).sort((a, b) => collator.compare(a._path || a.name, b._path || b.name));
+  if (all.length > use.length) toast(`PDF・画像ではないファイルを ${all.length - use.length} 件スキップしました`);
+  if (!use.length) return;
+  state.loading++; refresh();
+  const errors = [];
+  for (const f of use) {
+    try {
+      const bytes = isPdfFile(f) ? new Uint8Array(await f.arrayBuffer()) : await imageToPdf(f);
+      const doc = await PdfDoc.open(bytes);
+      const file = { name: f.name, color: COLORS[state.files.length % COLORS.length], doc, bytes, viewer: null };
+      state.files.push(file);
+      for (let i = 0; i < doc.numPages; i++) addItem(file, i);
+      refresh();
+      await wait(0);
+    } catch (e) {
+      console.warn(f.name, e);
+      errors.push(errMessage(f.name, e));
+    }
+  }
+  state.loading--; refresh();
+  if (errors.length) toast(errors.length > 1 ? `${errors[0]}（ほか ${errors.length - 1} 件も読み込めませんでした）` : errors[0]);
+}
+setupFileInput({ drop: $('#drop'), input: $('#file'), onFiles: addFiles, isBusy: () => state.busy });
+
+/* ---------- ページのカード ---------- */
+const itemOf = el => state.items.find(it => it.el === el) || allItems.get(el);
+const allItems = new WeakMap(); // 削除したもの（元に戻す用）も引けるように
+function addItem(file, index) {
+  const it = { id: ++state.seq, file, index, rot: 0, sel: false, shown: null, visible: false, el: null };
+  const el = document.createElement('div');
+  el.className = 'card loading'; el.style.setProperty('--fc', file.color);
+  const btns = ['rotl', 'rotr', 'zoom', 'del'].map(a =>
+    `<button type="button" class="icon${a === 'del' ? ' del' : ''}" data-act="${a}" title="${ACTION_LABEL[a]}" aria-label="${ACTION_LABEL[a]}">${ICON[a]}</button>`).join('');
+  el.innerHTML = `<i class="fbar"></i><div class="thumb"><img alt="" hidden draggable="false"><span class="num"></span><span class="check">${SVG('<path d="M20 6 9 17l-5-5"/>', 14)}</span><div class="spin"></div></div>
+    <div class="meta"><div class="name"></div><div class="sub"></div></div><div class="actions">${btns}</div>`;
+  const nm = el.querySelector('.name'); nm.textContent = file.name; nm.title = file.name;
+  el.querySelector('.sub').textContent = `${index + 1}ページ目`;
+  it.el = el; allItems.set(el, it);
+  state.items.push(it); grid.appendChild(el); io.observe(el);
+}
+
+// 紙の大きさの名前（A4 など）
+const PAPERS = [['A3', 297, 420], ['A4', 210, 297], ['A5', 148, 210], ['B4', 257, 364], ['B5', 182, 257], ['レター', 216, 279], ['リーガル', 216, 356]];
+function paperName(view, rot) {
+  let w = (view[2] - view[0]) * 25.4 / 72, h = (view[3] - view[1]) * 25.4 / 72;
+  if (rot % 180) [w, h] = [h, w];
+  const p = PAPERS.find(([, a, b]) => (Math.abs(w - a) < 3 && Math.abs(h - b) < 3) || (Math.abs(w - b) < 3 && Math.abs(h - a) < 3));
+  return p ? p[0] + (w > h ? ' 横' : '') : `${Math.round(w)}×${Math.round(h)} mm`;
+}
+
+// 見えているカードだけ、順番に絵を描く
+const want = new Set();
+let drawing = false;
+const io = new IntersectionObserver(entries => {
+  for (const e of entries) {
+    const it = allItems.get(e.target); if (!it) continue;
+    it.visible = e.isIntersecting;
+    if (it.visible && it.shown !== it.rot) want.add(it);
+  }
+  pump();
+}, { rootMargin: '500px 0px' });
+function queueDraw(it) { want.add(it); pump(); }
+async function pump() {
+  if (drawing) return;
+  drawing = true;
+  try {
+    while (want.size) {
+      let it = null;
+      for (const x of want) if (x.visible) { it = x; break; }
+      if (!it) break;
+      want.delete(it);
+      if (it.shown !== it.rot) await drawThumb(it);
+    }
+  } finally { drawing = false; }
+}
+async function drawThumb(it) {
+  const rot = it.rot;
+  try {
+    const doc = await viewerDoc(it.file), page = await doc.getPage(it.index + 1);
+    const r = (page.rotate + rot) % 360, v1 = page.getViewport({ scale: 1, rotation: r });
+    const target = Math.round(190 * Math.min(2, window.devicePixelRatio || 1));
+    const vp = page.getViewport({ scale: target / Math.max(v1.width, v1.height), rotation: r });
+    const c = newCanvas(Math.max(1, Math.floor(vp.width)), Math.max(1, Math.floor(vp.height)));
+    await page.render({ canvas: c, viewport: vp }).promise;
+    const img = it.el.querySelector('img');
+    img.src = c.toDataURL('image/jpeg', 0.85); img.hidden = false;
+    c.width = c.height = 0;
+    it.el.querySelector('.sub').textContent = `${it.index + 1}ページ目 ・ ${paperName(page.view, r)}`;
+    page.cleanup();
+  } catch (e) {
+    console.warn('見本を描けませんでした', e);
+    const t = it.el.querySelector('.thumb');
+    if (!t.querySelector('.nothumb')) t.insertAdjacentHTML('beforeend', '<div class="nothumb">見本を表示できません<br>（保存はできます）</div>');
+  }
+  it.shown = rot;
+  it.el.classList.remove('loading');
+  if (it.shown !== it.rot) want.add(it);
+}
+
+/* ---------- 元に戻す ---------- */
+const snapshot = () => state.items.map(it => [it, it.rot]);
+function pushUndo(snap = snapshot()) { state.undo.push(snap); if (state.undo.length > 50) state.undo.shift(); }
+function undo() {
+  const snap = state.undo.pop();
+  if (!snap) return;
+  const keep = new Set(snap.map(([it]) => it));
+  for (const it of state.items) if (!keep.has(it)) { it.el.remove(); it.sel = false; }
+  state.items = snap.map(([it, rot]) => { if (it.rot !== rot) { it.rot = rot; queueDraw(it); } return it; });
+  for (const it of state.items) grid.appendChild(it.el);
+  refresh();
+}
+
+/* ---------- 回転・削除・選択 ---------- */
+const selected = () => state.items.filter(it => it.sel);
+function rotate(items, d) {
+  if (!items.length) return;
+  pushUndo();
+  for (const it of items) { it.rot = (it.rot + d + 360) % 360; queueDraw(it); }
+  refresh();
+}
+function removeItems(items) {
+  if (!items.length) return;
+  pushUndo();
+  const del = new Set(items);
+  state.items = state.items.filter(it => !del.has(it));
+  for (const it of del) { it.el.remove(); it.sel = false; }
+  refresh();
+}
+function setOrder(items) {
+  state.items = items;
+  for (const it of items) grid.appendChild(it.el);
+  refresh();
+}
+
+let suppressClick = false;
+grid.addEventListener('click', e => {
+  if (suppressClick) { suppressClick = false; return; }
+  const card = e.target.closest('.card'); if (!card || state.busy) return;
+  const it = itemOf(card); if (!it) return;
+  const b = e.target.closest('button[data-act]');
+  if (b) {
+    const act = b.dataset.act;
+    if (act === 'rotl' || act === 'rotr') rotate([it], act === 'rotr' ? 90 : -90);
+    else if (act === 'del') removeItems([it]);
+    else if (act === 'zoom') openPreview(it);
+    return;
+  }
+  if (e.shiftKey && state.lastClick && state.items.includes(state.lastClick)) {
+    const a = state.items.indexOf(state.lastClick), z = state.items.indexOf(it);
+    for (let i = Math.min(a, z); i <= Math.max(a, z); i++) state.items[i].sel = true;
+  } else it.sel = !it.sel;
+  state.lastClick = it;
+  refresh();
+});
+$('#selbar').addEventListener('click', e => {
+  const b = e.target.closest('button[data-sel]'); if (!b || state.busy) return;
+  const act = b.dataset.sel;
+  if (act === 'rotl' || act === 'rotr') rotate(selected(), act === 'rotr' ? 90 : -90);
+  else if (act === 'del') removeItems(selected());
+  else { for (const it of state.items) it.sel = false; refresh(); }
+});
+$('#undo').addEventListener('click', undo);
+$('#selAll').addEventListener('click', () => { const all = state.items.every(it => it.sel); for (const it of state.items) it.sel = !all; refresh(); });
+$('#reverse').addEventListener('click', () => { pushUndo(); setOrder([...state.items].reverse()); });
+$('#clear').addEventListener('click', () => { removeItems([...state.items]); toast('すべて削除しました（「元に戻す」で戻せます）'); });
+document.addEventListener('keydown', e => {
+  if (!$('#preview').hidden || state.busy || e.target.closest('input,textarea,select')) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && state.items.length) { e.preventDefault(); for (const it of state.items) it.sel = true; refresh(); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && selected().length) { e.preventDefault(); removeItems(selected()); }
+  else if (e.key === 'Escape' && selected().length) { for (const it of state.items) it.sel = false; refresh(); }
+});
+
+/* ---------- 並べ替え（マウスはそのままドラッグ、指は長押ししてから） ---------- */
+let drag = null;
+grid.addEventListener('pointerdown', e => {
+  if (state.busy || e.button !== 0 || e.target.closest('button')) return;
+  const card = e.target.closest('.card'); if (!card) return;
+  drag = { card, id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, touch: e.pointerType !== 'mouse', active: false, timer: 0 };
+  if (drag.touch) drag.timer = setTimeout(startDrag, 420);
+});
+window.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  drag.x = e.clientX; drag.y = e.clientY;
+  if (!drag.active) {
+    if (Math.hypot(drag.x - drag.x0, drag.y - drag.y0) < (drag.touch ? 10 : 6)) return;
+    if (drag.touch) { clearTimeout(drag.timer); drag = null; return; } // 指を動かした＝画面のスクロール
+    startDrag();
+  }
+  moveDrag();
+});
+window.addEventListener('pointerup', e => { if (drag && e.pointerId === drag.id) endDrag(); });
+window.addEventListener('pointercancel', e => { if (drag && e.pointerId === drag.id) endDrag(); });
+document.addEventListener('touchmove', e => { if (drag && drag.active) e.preventDefault(); }, { passive: false });
+grid.addEventListener('contextmenu', e => { if (drag || matchMedia('(pointer:coarse)').matches) e.preventDefault(); });
+function startDrag() {
+  if (!drag || drag.active) return;
+  drag.active = true;
+  drag.before = snapshot();
+  if (drag.touch && navigator.vibrate) navigator.vibrate(15);
+  const r = drag.card.getBoundingClientRect();
+  drag.ox = drag.x0 - r.left; drag.oy = drag.y0 - r.top;
+  const g = drag.card.cloneNode(true);
+  g.classList.add('ghost'); g.style.width = r.width + 'px';
+  document.body.appendChild(g);
+  drag.ghost = g; drag.card.classList.add('dragging');
+  moveDrag();
+  drag.raf = requestAnimationFrame(autoScroll);
+}
+function moveDrag() {
+  const { x, y } = drag;
+  drag.ghost.style.left = (x - drag.ox) + 'px'; drag.ghost.style.top = (y - drag.oy) + 'px';
+  const t = document.elementFromPoint(x, y);
+  const card = t && t.closest('.card');
+  if (card && card !== drag.card && card.parentNode === grid) {
+    const r = card.getBoundingClientRect();
+    grid.insertBefore(drag.card, x > r.left + r.width / 2 ? card.nextSibling : card);
+  }
+}
+function autoScroll() {
+  if (!drag || !drag.active) return;
+  const edge = 70, h = window.innerHeight;
+  const v = drag.y < edge ? -(edge - drag.y) / 3 : drag.y > h - edge ? (drag.y - (h - edge)) / 3 : 0;
+  if (v) { window.scrollBy(0, v); moveDrag(); }
+  drag.raf = requestAnimationFrame(autoScroll);
+}
+function endDrag() {
+  const d = drag; drag = null;
+  clearTimeout(d.timer);
+  if (!d.active) return;
+  cancelAnimationFrame(d.raf);
+  d.ghost.remove(); d.card.classList.remove('dragging');
+  suppressClick = true; setTimeout(() => { suppressClick = false; }, 0);
+  const order = [...grid.children].map(el => allItems.get(el));
+  if (order.some((it, i) => it !== state.items[i])) { pushUndo(d.before); state.items = order; }
+  refresh();
+}
+
+/* ---------- 画面の表示を整える ---------- */
+function refresh() {
+  const n = state.items.length, sel = selected().length, files = new Set(state.items.map(it => it.file)).size;
+  state.items.forEach((it, i) => { it.el.querySelector('.num').textContent = i + 1; it.el.classList.toggle('sel', it.sel); });
+  const any = n > 0 || state.undo.length > 0;
+  $('#listbar').hidden = !any; $('#hint').hidden = !n;
+  $('#drop').classList.toggle('compact', n > 0);
+  const touch = matchMedia('(pointer:coarse)').matches;
+  $('#dropTitle').textContent = n ? (touch ? 'タップして PDF を追加' : 'PDF を追加（ドラッグ＆ドロップ / クリック）')
+    : (touch ? 'タップして PDF を選ぶ' : 'ここに PDF をドラッグ＆ドロップ');
+  $('#count').textContent = (n ? `${files} ファイル ・ ${n} ページ` : 'ページがありません') + (state.loading ? '　読み込み中…' : '');
+  $('#undo').disabled = !state.undo.length;
+  $('#selAll').textContent = n && sel === n ? '選択を解除' : 'すべて選択';
+  $('#selAll').disabled = $('#reverse').disabled = $('#clear').disabled = !n;
+  $('#selbar').hidden = !sel;
+  $('#selCount').textContent = `${sel} ページを選択中`;
+  updatePanel();
+}
+
+/* ---------- 保存の設定 ---------- */
+const SETTINGS_KEY = 'pdf-pages-settings-v1';
+form.elements.save.value = matchMedia('(pointer:coarse)').matches ? 'each' : 'zip';
+function groups() {
+  const how = form.elements.how.value;
+  if (how === 'extract') { const s = selected(); return s.length ? [s] : []; }
+  if (how === 'split') {
+    const k = Math.max(1, Math.floor(+form.elements.every.value) || 1), out = [];
+    for (let i = 0; i < state.items.length; i += k) out.push(state.items.slice(i, i + k));
+    return out;
+  }
+  return state.items.length ? [state.items] : [];
+}
+function defaultName() {
+  const first = state.items[0];
+  if (!first) return 'PDF';
+  const s = stem(first.file.name), how = form.elements.how.value;
+  if (how === 'extract') return s + '_抜き出し';
+  if (how === 'split') return s;
+  return new Set(state.items.map(it => it.file)).size > 1 ? s + '_結合' : s + '_編集';
+}
+function updatePanel() {
+  const f = form.elements, how = f.how.value, sel = selected().length, g = groups();
+  $('#extractNote').textContent = sel ? `選んだ ${sel} ページだけを1つの PDF に（抜き出し）` : 'ページをタップして選ぶと、そのページだけを1つの PDF に（抜き出し）';
+  $('#splitBox').hidden = how !== 'split';
+  $('#splitNote').textContent = how === 'split' && state.items.length ? `→ ${g.length} 個の PDF になります` : '';
+  const many = g.length > 1;
+  $('#ext').textContent = many && f.save.value === 'zip' ? '.zip' : '.pdf';
+  if (!state.fnameTouched) $('#fname').value = defaultName();
+  const mk = $('#make');
+  mk.textContent = how === 'extract' && !sel ? 'ページを選んでください' : many ? `${g.length} 個の PDF を保存` : 'PDFを保存';
+  mk.disabled = state.busy || state.loading > 0 || !g.length;
+}
+function saveSettings() {
+  try { const f = form.elements; localStorage.setItem(SETTINGS_KEY, JSON.stringify({ how: f.how.value, every: f.every.value, save: f.save.value })); }
+  catch (e) { /* 保存できなくても動作には影響なし */ }
+}
+function loadSettings() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'), f = form.elements;
+    if (['merge', 'split'].includes(d.how)) f.how.value = d.how; // 「選んだページだけ」は毎回選び直すので戻さない
+    if (+d.every >= 1) f.every.value = d.every;
+    if (['each', 'zip'].includes(d.save)) f.save.value = d.save;
+  } catch (e) { /* 初回やブロック時は既定値のまま */ }
+}
+form.addEventListener('input', e => { if (e.target.id === 'fname') state.fnameTouched = !!e.target.value.trim(); updatePanel(); saveSettings(); });
+form.addEventListener('change', () => { updatePanel(); saveSettings(); });
+
+/* ---------- 保存 ---------- */
+function setProgress(done, total, label) {
+  $('#progress').hidden = false;
+  $('#pbar').style.width = (total ? done / total * 100 : 0) + '%';
+  $('#ptext').textContent = label;
+}
+$('#make').addEventListener('click', async () => {
+  const g = groups();
+  if (!g.length || state.busy) return;
+  const base = sanitize($('#fname').value) || defaultName();
+  state.busy = true; grid.classList.add('busy'); updatePanel();
+  $('#result').hidden = true;
+  if (state.pdfUrl) { URL.revokeObjectURL(state.pdfUrl); state.pdfUrl = null; }
+  try {
+    const outs = [], digits = Math.max(2, String(g.length).length);
+    for (let k = 0; k < g.length; k++) {
+      setProgress(k, g.length, g.length > 1 ? `${k + 1} / ${g.length} 個目を作成中…` : 'PDF を作成中…');
+      await wait(0);
+      const name = g.length > 1 ? `${base}_${String(k + 1).padStart(digits, '0')}` : base;
+      const blob = await PdfDoc.writePages(g[k].map(it => ({ doc: it.file.doc, index: it.index, rotate: it.rot })), { title: name });
+      outs.push(new File([blob], name + '.pdf', { type: 'application/pdf' }));
+    }
+    setProgress(1, 1, '');
+    state.outputs = outs; state.outName = base;
+    if (outs.length === 1) state.pdfUrl = URL.createObjectURL(outs[0]);
+    await saveOutputs();
+    showResult(g);
+  } catch (e) {
+    console.error(e);
+    toast('エラーが発生しました：' + (e && e.message || e));
+  } finally {
+    state.busy = false; grid.classList.remove('busy'); $('#progress').hidden = true; updatePanel();
+  }
+});
+async function saveOutputs() {
+  const outs = state.outputs;
+  if (outs.length > 1 && form.elements.save.value === 'zip') {
+    saveBlob(await makeZip(outs.map(f => ({ name: f.name, blob: f }))), state.outName + '.zip');
+  } else {
+    for (const f of outs) { saveBlob(f, f.name); if (outs.length > 1) await wait(250); }
+  }
+}
+function showResult(g) {
+  const outs = state.outputs, total = outs.reduce((s, f) => s + f.size, 0), pages = g.reduce((s, x) => s + x.length, 0);
+  const r = $('#result');
+  r.innerHTML = `<div class="head">✓ 保存しました</div><div class="line"></div>
+    <div class="small muted">保存先：ダウンロードフォルダ</div>
+    <div class="btns"><button type="button" class="btn" id="again">もう一度保存</button>${state.pdfUrl ? '<button type="button" class="btn" id="open">開いて確認</button>' : ''}${canShareFiles(outs) ? '<button type="button" class="btn" id="share">共有</button>' : ''}</div>`;
+  r.querySelector('.line').textContent = outs.length > 1 ? `${outs.length} 個の PDF ・ 合計 ${pages} ページ ・ ${fmtSize(total)}` : `${pages} ページ ・ ${fmtSize(total)}`;
+  r.querySelector('#again').addEventListener('click', saveOutputs);
+  const op = r.querySelector('#open');
+  if (op) op.addEventListener('click', () => window.open(state.pdfUrl, '_blank'));
+  const sh = r.querySelector('#share');
+  if (sh) sh.addEventListener('click', () => shareFiles(state.outputs));
+  r.hidden = false;
+}
+
+/* ---------- ページを大きく見る ---------- */
+const pv = { it: null, gen: 0 };
+function openPreview(it) { pv.it = it; $('#preview').hidden = false; drawPreview(); }
+function closePreview() { $('#preview').hidden = true; pv.it = null; pv.gen++; }
+async function drawPreview() {
+  const it = pv.it, gen = ++pv.gen; if (!it) return;
+  const pos = state.items.indexOf(it);
+  $('#pvName').textContent = `${pos + 1} / ${state.items.length} ・ ${it.file.name} の ${it.index + 1}ページ目`;
+  $('#pvBusy').hidden = false;
+  try {
+    const doc = await viewerDoc(it.file), page = await doc.getPage(it.index + 1);
+    if (gen !== pv.gen) return;
+    const r = (page.rotate + it.rot) % 360, v1 = page.getViewport({ scale: 1, rotation: r });
+    const stage = $('.pv-stage').getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+    const s = Math.min(1600 / Math.max(v1.width, v1.height), Math.max(stage.width - 28, 200) * dpr / v1.width, Math.max(Math.min(window.innerHeight * 0.72, 800), 200) * dpr / v1.height);
+    const vp = page.getViewport({ scale: s, rotation: r }), c = newCanvas(Math.floor(vp.width), Math.floor(vp.height));
+    await page.render({ canvas: c, viewport: vp }).promise;
+    if (gen !== pv.gen) return;
+    const out = $('#pvCanvas');
+    out.width = c.width; out.height = c.height; out.getContext('2d').drawImage(c, 0, 0);
+    c.width = c.height = 0;
+  } catch (e) {
+    console.warn(e);
+    if (gen === pv.gen) toast('このページは表示できません');
+  } finally { if (gen === pv.gen) $('#pvBusy').hidden = true; }
+}
+function stepPreview(d) {
+  const i = state.items.indexOf(pv.it) + d;
+  if (i >= 0 && i < state.items.length) { pv.it = state.items[i]; drawPreview(); }
+}
+$('#preview').addEventListener('click', e => {
+  const b = e.target.closest('[data-pv]');
+  if (!b) { if (e.target.id === 'preview') closePreview(); return; }
+  const a = b.dataset.pv;
+  if (a === 'close') closePreview();
+  else if (a === 'prev' || a === 'next') stepPreview(a === 'next' ? 1 : -1);
+  else if (a === 'rotl' || a === 'rotr') { rotate([pv.it], a === 'rotr' ? 90 : -90); drawPreview(); }
+});
+document.addEventListener('keydown', e => {
+  if ($('#preview').hidden) return;
+  if (e.key === 'Escape') closePreview();
+  else if (e.key === 'ArrowLeft') stepPreview(-1);
+  else if (e.key === 'ArrowRight') stepPreview(1);
+});
+
+loadSettings();
+refresh();
+</script>
+</body>
+</html>

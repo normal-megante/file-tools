@@ -17,6 +17,7 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 
 - ファイルはすべて端末の中で処理する。サーバーには送らない。
 - HTML / CSS / JavaScript だけで作る（ビルド作業なし・外部ライブラリなし）。
+  - 例外：PDF のページを絵にする（表示する）ところだけ pdf.js（Mozilla、Apache 2.0）を `vendor/pdfjs/` に同梱して使う。商用でも無料・許諾不要で、ライセンス文を同梱すればよい（2026-11-05 ユーザー了承）。PDF の保存（組み替え）は自作の `js/pdfdoc.js`。
 - 1つの大きなアプリにせず、作業ごとに1ページ。トップの `index.html` がメニュー。
 - PC でしかできないもの（Web ページ → PDF、Office → PDF、PDF → Word など）は、あとで PC 用の小さな Python ツールで補う予定。
 - むずかしいもの・本格的な PDF 編集は、PC に入れた PDF24 Creator を使う（自作しない）。
@@ -30,10 +31,13 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 | `image.html` | 画像の変換・圧縮（JPEG/PNG/WebP、画質、ファイルサイズ上限、縮小、回転・反転・切り抜き、ZIP 保存） |
 | `qr.html` | QR コード作成（URL・文章、Wi-Fi、連絡先。PNG / SVG 保存、コピー、共有） |
 | `scan.html` | スキャン補正（カメラ撮影、四隅の自動検出と手直し、まっすぐ補正、影消し・線くっきり、PDF / 画像で保存） |
+| `pdf-pages.html` | PDF のページ整理（結合・分割・抜き出し・並べ替え・回転・削除、画像も1ページとして入れられる、元に戻す） |
 | `css/common.css` | 全ページ共通の見た目 |
 | `js/common.js` | 共通の部品（ファイル受け取り、画像一覧 `ImageList`、縮小 `downscale`、ZIP 作成、保存・共有など） |
 | `js/pdf.js` | PDF 作成の共通部品（`buildPdf`、JPEG そのまま埋め込み、Flate 圧縮、白黒 1 ビット `bitonalFromCanvas`、用紙の配置） |
 | `js/scan.js` | スキャン補正の計算（`Scan.detectDocument` 四隅検出、`paperAspect` 紙の縦横比、`warpQuad` まっすぐ補正、`enhance` 影消し・線くっきり）。画面に依存しないので Node でもテストできる |
+| `js/pdfdoc.js` | PDF を読んでページを組み替える（`PdfDoc.open` → `doc.numPages`、`PdfDoc.writePages([{doc, index, rotate}])`）。こわれた PDF の立て直し、パスワードなしで開ける保護 PDF の解除（RC4・AES-128・AES-256）。Node でもテストできる |
+| `vendor/pdfjs/` | pdf.js 6.4.299（PDF の表示部品。中身は書き換えない。説明は中の README.md） |
 | `js/qrcode.js` | QR コードの作成（自作。Node でもテストできる形） |
 | `manifest.webmanifest` / `sw.js` / `icons/` | アプリ化（PWA）。`sw.js` は「ネット優先・つながらなければ保存分」 |
 | `dev-server.py` | PC で確かめるための簡易サーバー（`python dev-server.py` → http://localhost:8140） |
@@ -45,7 +49,17 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 - 縮小は半分ずつ段階的に（`downscale`）。一気に縮めると線がギザギザになる。
 - 画像の編集情報は `{ rot, flip, crop }`。適用順は「回転 → 反転 → 切り抜き」。`crop` は 0〜1 の割合。
 - `sw.js` の `CACHE` 名と `PRECACHE` 一覧は、ファイルを増やしたら更新する。
-- 設定は `localStorage` に保存（`img2pdf-settings-v1`、`image-convert-settings-v1`、`qr-settings-v1`、`scan-settings-v1`）。QR の入力内容は保存しない。
+- 設定は `localStorage` に保存（`img2pdf-settings-v1`、`image-convert-settings-v1`、`qr-settings-v1`、`scan-settings-v1`、`pdf-pages-settings-v1`）。QR の入力内容は保存しない。
+
+### PDF のページ整理（`js/pdfdoc.js` と pdf.js）
+
+- ページの中身はそのままコピーし、フォントや画像は元のファイルごとに1回だけ入れる。入れないページへのリンクは消し、名前つきのリンク先（Word などの目次）は直接の行き先に書き換える。しおり（目次）とフォームの入力機能は引き継がない（見た目は残る）。
+- パスワードなしで開ける保護 PDF（印刷禁止など）は、解除して読む（MD5・RC4・AES は自作、SHA-2 は `crypto.subtle`）。パスワードが必要なものは `code: 'password'` のエラー。
+- pdf.js は `import('./vendor/pdfjs/pdf.min.mjs')` で必要なときだけ読む。`file://` では動かないので、PC では `dev-server.py` で確かめる。
+- pdf.js に渡すデータは持っていかれる（使えなくなる）ので、`bytes.slice()` の写しを渡す。cmaps などの場所は絶対 URL で渡す。
+- 裏で読む係（`PDFWorker`）は1つを使い回す（ファイルごとに作るとスマホのメモリが足りなくなる）。import したモジュールにはプロパティを足せない（凍結されている）。
+- pdf.js の描画は画面の描き替え（`requestAnimationFrame`）を待つので、ブラウザ枠が隠れていると終わらない。テストのときはページ内で `requestAnimationFrame` を `setTimeout` に差し替える。見えているかどうか（IntersectionObserver）も動かないので、テストでは `it.visible = true` にして描かせる。
+- テスト用 PDF（ふつう・xref ストリーム・日本語・保護3種・パスワードつき・こわれたもの・ページの木の入れ子・名前つきリンク）は作業用フォルダで PyMuPDF で作り、Node の `PdfDoc` で書き出して PyMuPDF で確かめた（リポジトリには入れていない）。
 
 ### スキャン補正（`js/scan.js`）
 
@@ -70,8 +84,18 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
    - スマホではカメラで直接撮れる。PDF（1つにまとめる）か画像で保存。プレビューで元の写真と比べられる。
    - 確認済み：合成写真 11 種で四隅の誤差 0.01〜0.6%、紙の縦横比のずれ 0.5% 以内。白黒 PDF の中身を復元して元画像と 1 画素も違わないこと。
    - 未対応：文字の向きの自動判定（回転ボタンで直す）、水平器つきのアプリ内カメラ。
-3. ⬜ **PDF ツール**：圧縮、PDF → 画像、結合・分割・並べ替え・回転・ページ削除など。
+3. **PDF ツール**（1つずつ作る）
+   1. ✅ **ページの整理**（2026-11-05）：結合・分割（N ページずつ、ZIP も）・抜き出し・並べ替え（ドラッグ、スマホは長押し）・回転・削除・元に戻す。画像も1ページとして入れられる。
+      - 確認済み：テスト PDF 11 種を開けて（パスワードつきは正しく断る）、書き出した PDF を PyMuPDF と pdf.js で開いて、ページの順番・回転・日本語・注釈・リンクが正しいこと。
+   2. ⬜ **PDF → 画像**（JPEG / PNG、画質を選ぶ、ZIP か1枚ずつ）
+   3. ⬜ **PDF の圧縮**（ふつう：中の写真だけ縮める／強力：ページごと画像にする）
+   4. ⬜ **書き込み**（文字・手書き・チェック・日付・白塗り・ハンコやサインの画像）
 4. ⬜ **変換（PC のみ）**：Web ページ → PDF、Office → PDF、PDF → Word など（Python ツール）。
+
+### あとから増えた希望（順番は未定。2026-11-05）
+
+- **画面に出た QR コードを読む**：スクショ（画像）から読み取る。PC は Ctrl+V で貼り付け、スマホはスクショを「共有」でこのアプリに送れるようにする（アプリとして追加したとき）。カメラで読むのもできる。
+- **動画の変換**（形式・大きさ・軽くする）と **動画 → 音声**（MP3 / M4A など）。スマホのブラウザでもある程度できる（WebCodecs）。重いものは PC の Python ツール（ffmpeg）で。
 
 ## 公開
 
