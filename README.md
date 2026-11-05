@@ -31,3 +31,7 @@ HTML / CSS / JavaScript だけで作っています（ビルド作業なし）�
 - [Mediabunny](https://mediabunny.dev/)（Vanilagy and contributors）… 動画・音声の読み書きと変換。Mozilla Public License 2.0。`vendor/mediabunny/` に同梱（ライセンス文も同じ場所。中身は書き換えていません）
   - MP3 を作る部分に [LAME](https://lame.sourceforge.io/)（GNU LGPL）を使っています（Mediabunny の MP3 部品の中に入っているもの）
   - FLAC を作る部分に [libFLAC](https://xiph.org/flac/)（Xiph.Org、BSD ライセンス）を使っています（Mediabunny の FLAC 部品の中に入っているもの）
+
+## 商標
+
+QRコードは株式会社デンソーウェーブの登録商標です。
