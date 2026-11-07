@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GIF アニメを作る｜ファイルツール箱</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/common.css">
+<style>
+.vcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:12px;margin-top:14px}
+.vhead{display:flex;align-items:center;gap:8px}
+.vmain{flex:1 1 auto;min-width:0}
+.vmain .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vmain .sub{font-size:12px;color:var(--muted)}
+.player{background:#000;border-radius:10px;overflow:hidden;margin-top:10px;display:flex;justify-content:center}
+.player video{display:block;max-width:100%;max-height:min(46vh,380px)}
+.vcard h3{font-size:13px;color:var(--muted);margin:14px 0 6px;font-weight:600}
+.trim{display:grid;grid-template-columns:auto 1fr auto;gap:6px 8px;align-items:center}
+.trim input{width:100%;font-variant-numeric:tabular-nums}
+.trim span{font-size:13px}
+.seg.wide label{padding:6px 2px;font-size:12.5px}
+.est{margin-top:14px;font-size:13px;background:var(--accent-soft);border-radius:8px;padding:8px 10px;line-height:1.5}
+.est .w{color:var(--warn);font-size:12px;margin-top:4px}
+.est.bad{background:var(--warn-soft);color:var(--warn)}
+.foot-row{display:flex;gap:8px}
+.foot-row .primary{flex:1}
+#cancel{height:auto;padding:0 16px}
+.result .pv{display:block;max-width:100%;max-height:min(240px,28vh);margin:8px auto 4px;border-radius:6px;background:repeating-conic-gradient(#ddd 0 25%,#fff 0 50%) 0 0/16px 16px}
+.result .save{background:var(--accent);color:var(--accent-text);border-color:var(--accent);font-weight:600}
+.result .save:hover{color:var(--accent-text);background:var(--accent-hover)}
+.result .wl{color:var(--warn);font-size:12px;margin-top:4px}
+.result.warn{background:var(--warn-soft)}
+.result.warn .head{color:var(--warn)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="layout">
+    <section>
+      <header>
+        <a class="back" href="./">← ツール箱にもどる</a>
+        <h1>GIF アニメを作る</h1>
+        <p>動画の一部や、何枚かの画像から、動く GIF を作ります。処理はこの端末の中だけで行われます。</p>
+      </header>
+
+      <div id="drop" class="drop" tabindex="0" role="button" aria-label="動画か画像を追加">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div class="big" id="dropTitle"></div>
+        <div class="muted"><span class="pc-only">またはクリックして選択（画像はいくつでも・Ctrl+V の貼り付けもOK）</span><span class="touch-only">動画1つか、画像をいくつでも選べます</span></div>
+        <input type="file" id="file" accept="video/*,image/*,.mp4,.m4v,.mov,.mkv,.webm,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif" multiple hidden>
+      </div>
+      <p class="note">動画（MP4・MOV・WebM など）を1つ入れると、その一部を GIF に。画像を何枚か入れると、パラパラまんがのような GIF に（1枚だけなら、動かない GIF）。動画と画像は、いっしょには使えません。</p>
+
+      <!-- 動画 -->
+      <div id="vbox" class="vcard" hidden>
+        <div class="vhead">
+          <div class="vmain"><div class="name" id="vname"></div><div class="sub" id="vsub"></div></div>
+          <button type="button" class="icon del" id="vdel" title="この動画をやめる" aria-label="この動画をやめる"></button>
+        </div>
+        <div id="vwarn" class="warn" hidden></div>
+        <div class="player"><video id="video" controls playsinline preload="metadata"></video></div>
+        <p class="note" id="playNote" hidden>この端末では見本を再生できませんでした（GIF は作れることがあります）。時間は数字で入れてください。</p>
+        <h3>使う所</h3>
+        <div class="trim">
+          <span>始め</span><input type="text" id="tStart" inputmode="decimal" placeholder="0:00" autocomplete="off"><button type="button" class="btn" id="setStart">今の位置</button>
+          <span>終わり</span><input type="text" id="tEnd" inputmode="decimal" placeholder="最後まで" autocomplete="off"><button type="button" class="btn" id="setEnd">今の位置</button>
+        </div>
+        <p class="note">動画を再生して止め、「今の位置」を押すと入ります。「分:秒」で入れることもできます（例：0:05.5）。GIF は数秒〜10 秒くらいがおすすめです（長いと、とても大きなファイルになります）。音は入りません（GIF には音を入れられません）。</p>
+        <p class="note" id="longNote" hidden>長い動画なので、はじめの 10 秒にしてあります。使う所を選んでください。</p>
+      </div>
+
+      <!-- 画像 -->
+      <div class="listbar" id="listbar" hidden>
+        <span id="count"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="sortName">名前順に並べる</button>
+        <button type="button" class="btn" id="reverse">逆順</button>
+        <button type="button" class="btn danger" id="clear">すべて削除</button>
+      </div>
+      <p class="hint" id="hint" hidden><span class="pc-only">カードをドラッグすると順番を入れ替えられます。</span><span class="touch-only">‹ › ボタンで順番を入れ替えられます。</span>この順番で動きます。動く GIF を入れたときは、最初の1コマだけを使います。</p>
+      <div id="grid" class="grid"></div>
+    </section>
+
+    <aside>
+      <form id="settings" class="panel" onsubmit="return false">
+       <div class="panel-body">
+        <h2>大きさ（長いほうの辺の画素数）</h2>
+        <div class="seg">
+          <label><input type="radio" name="size" value="320">320</label>
+          <label><input type="radio" name="size" value="480">480</label>
+          <label><input type="radio" name="size" value="640">640</label>
+          <label><input type="radio" name="size" value="800">800</label>
+        </div>
+        <p class="note">480 で、スマホの画面で見るのにちょうどよいくらい。大きくするほどファイルも大きくなります（辺を 2 倍にすると約 4 倍）。元より大きくはしません。</p>
+
+        <div id="vset" hidden>
+          <h2>なめらかさ（1秒のコマ数）</h2>
+          <div class="seg">
+            <label><input type="radio" name="fps" value="10">10</label>
+            <label><input type="radio" name="fps" value="15">15</label>
+            <label><input type="radio" name="fps" value="20">20</label>
+            <label><input type="radio" name="fps" value="25">25</label>
+          </div>
+          <p class="note">多いほど動きがなめらかで、ファイルが大きくなります。15 がおすすめ。</p>
+          <h2>速さ</h2>
+          <div class="seg wide">
+            <label><input type="radio" name="speed" value="0.5">0.5倍</label>
+            <label><input type="radio" name="speed" value="1">1倍</label>
+            <label><input type="radio" name="speed" value="1.5">1.5倍</label>
+            <label><input type="radio" name="speed" value="2">2倍</label>
+            <label><input type="radio" name="speed" value="3">3倍</label>
+          </div>
+          <p class="note">2倍にすると、半分の時間で動きます（コマの数も半分になり、軽くなります）。</p>
+        </div>
+
+        <div id="iset" hidden>
+          <h2>1枚を見せる時間</h2>
+          <div class="seg wide">
+            <label><input type="radio" name="sec" value="0.1">0.1秒</label>
+            <label><input type="radio" name="sec" value="0.2">0.2秒</label>
+            <label><input type="radio" name="sec" value="0.5">0.5秒</label>
+            <label><input type="radio" name="sec" value="1">1秒</label>
+            <label><input type="radio" name="sec" value="2">2秒</label>
+          </div>
+          <h2>形のちがう画像</h2>
+          <div class="seg">
+            <label><input type="radio" name="fit" value="contain">余白をつける</label>
+            <label><input type="radio" name="fit" value="cover">はみ出しを切る</label>
+          </div>
+          <p class="note">GIF の形（縦横）は、1枚目の画像に合わせます。</p>
+          <div class="row" id="bgRow"><span>余白の色</span>
+            <div class="seg">
+              <label><input type="radio" name="bg" value="white">白</label>
+              <label><input type="radio" name="bg" value="black">黒</label>
+            </div>
+          </div>
+        </div>
+
+        <h2>画質</h2>
+        <div class="opts">
+          <label class="opt"><input type="radio" name="q" value="high"><span><span class="t">きれい</span><span class="d">小さな動きや色の変化まで残す。ファイルは大きめ</span></span></label>
+          <label class="opt"><input type="radio" name="q" value="medium"><span><span class="t">ふつう<em class="rec">おすすめ</em></span><span class="d">見た目と軽さのバランス</span></span></label>
+          <label class="opt"><input type="radio" name="q" value="low"><span><span class="t">軽い</span><span class="d">色を半分（128 色）に。少しざらつく。送る用に</span></span></label>
+        </div>
+        <p class="note">GIF は 256 色までしか使えないので、写真や動画は少しざらついたり、色の境目に段がついたりします。画面の録画やイラストのような色の少ない絵は、きれいに作れます。</p>
+
+        <h2>くり返し</h2>
+        <div class="seg">
+          <label><input type="radio" name="loop" value="forever">ずっとくり返す</label>
+          <label><input type="radio" name="loop" value="once">1回だけ</label>
+        </div>
+        <p class="note">「1回だけ」にしても、見るアプリによってはくり返されます。</p>
+
+        <div id="est" class="est" hidden></div>
+       </div>
+       <div class="panel-foot">
+        <div class="foot-row">
+          <button type="button" id="make" class="primary" disabled>GIF を作る</button>
+          <button type="button" id="cancel" class="btn" hidden>やめる</button>
+        </div>
+        <div id="progress" class="progress" hidden><div class="bar"><i id="pbar"></i></div><div id="ptext" class="ptext"></div></div>
+        <div id="result" class="result" hidden></div>
+       </div>
+      </form>
+    </aside>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/gif.js"></script>
+<script>
+'use strict';
+// =========================================================
+// GIF アニメを作る
+//   動画：Mediabunny（vendor/mediabunny/）の CanvasSink でコマを取り出す（回転情報も当てて、決めた大きさにしてくれる）
+//   画像：ImageList の順番に、1枚目の形の枠へ入れる（余白をつける／はみ出しを切る）
+//   GIF にするのは自作の js/gif.js（全部のコマで同じ色の表＝パレット。前のコマと同じ所は書かない）
+// =========================================================
+const form = $('#settings');
+const TOUCH = matchMedia('(pointer:coarse)').matches;
+const MB_SRC = 'vendor/mediabunny/mediabunny.min.js';
+const MAX_FRAMES = 600;          // これより多いコマは作らない（時間とファイルの大きさのため）
+const BIG = 10 * 1048576;        // これより大きくなりそうなら注意を出す
+// 画質。n: 色の数、dither: 色を混ぜる強さ、keep: 前のコマとの差がこれ以下なら前のまま、
+// bpp: 大きさの目安（1画素1コマあたりのバイト数。画面全体がざらざら動く動画で測った、多めの値）
+const QUALITY = {
+  high: { n: 256, dither: 1, keep: 6, bpp: 0.55 },
+  medium: { n: 256, dither: 1, keep: 12, bpp: 0.45 },
+  low: { n: 128, dither: 0.8, keep: 20, bpp: 0.33 },
+};
+const DEFAULTS = { size: '480', fps: '15', speed: '1', sec: '0.5', fit: 'contain', bg: 'white', q: 'medium', loop: 'forever' };
+const SETTINGS_KEY = 'gif-settings-v1';
+const HAS_DECODER = typeof VideoDecoder !== 'undefined';
+const state = { video: null, busy: false, cancel: false, out: null, url: null };
+const CODEC_NAMES = { avc: 'H.264', hevc: 'HEVC（H.265）', vp8: 'VP8', vp9: 'VP9', av1: 'AV1', prores: 'ProRes' };
+const codecName = c => (!c ? '不明' : CODEC_NAMES[c] || c);
+$('#vdel').innerHTML = ICON.del;
+
+/* ---------- 動画の部品（使うときだけ読む） ---------- */
+let mbLoading = null;
+function MB() {
+  return mbLoading || (mbLoading = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = MB_SRC; s.onload = () => res(window.Mediabunny);
+    s.onerror = () => { mbLoading = null; s.remove(); rej(new Error('部品を読み込めませんでした（ネットにつながっているか確かめてください）')); };
+    document.head.appendChild(s);
+  }));
+}
+
+/* ---------- 時間の表示と読み取り ---------- */
+function fmtTime(s, frac = false) {
+  if (!isFinite(s)) return '?';
+  const m = Math.floor(s / 60), sec = s % 60;
+  return `${m}:${frac ? sec.toFixed(1).padStart(4, '0') : String(Math.floor(sec)).padStart(2, '0')}`;
+}
+// "1:05.5" "65.5" → 秒。空なら null、読めなければ NaN
+function parseTime(t) {
+  t = String(t).trim().replace(/[：]/g, ':').replace(/[．]/g, '.').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  if (!t) return null;
+  if (!/^\d+(:\d{1,2}){0,2}(\.\d*)?$/.test(t)) return NaN;
+  return t.split(':').reduce((a, v) => a * 60 + parseFloat(v), 0);
+}
+const fmtSec = s => s < 60 ? `${+s.toFixed(1)} 秒` : fmtTime(s);
+
+/* ---------- ファイルを入れる ---------- */
+const VIDEO_EXT = /\.(mp4|m4v|mov|mkv|webm|ts|mts|m2ts|3gp)$/i;
+const isVideoFile = f => (f.type && f.type.startsWith('video/')) || VIDEO_EXT.test(f.name);
+const list = new ImageList($('#grid'), { onChange: refresh });
+async function addFiles(input) {
+  const all = [...input], videos = all.filter(isVideoFile);
+  if (videos.length) {
+    if (list.items.length) return toast('動画と画像は、いっしょに使えません。動画にするときは、先に画像を「すべて削除」してください');
+    if (all.length > 1) toast('動画は1つずつです。最初の動画だけを使います');
+    return setVideo(videos[0]);
+  }
+  const imgs = all.filter(isImageFile);
+  if (all.length > imgs.length) toast(`動画・画像ではないファイルを ${all.length - imgs.length} 件スキップしました`);
+  if (!imgs.length) return;
+  if (state.video) return toast('動画と画像は、いっしょに使えません。画像にするときは、先に動画をやめてください（右上のごみ箱）');
+  clearResult();
+  await list.add(imgs);
+}
+setupFileInput({ drop: $('#drop'), input: $('#file'), onFiles: addFiles, isBusy: () => state.busy, isInternalDrag: () => list.isDragging });
+$('#sortName').addEventListener('click', () => list.sortByName());
+$('#reverse').addEventListener('click', () => list.reverse());
+$('#clear').addEventListener('click', () => { list.clear(); clearResult(); });
+
+/* ---------- 動画 ---------- */
+const videoEl = $('#video');
+async function setVideo(file) {
+  dropVideo();
+  clearResult();
+  const v = { file, name: file.name, size: file.size, info: null, error: null, loading: true, url: URL.createObjectURL(file) };
+  state.video = v;
+  $('#vname').textContent = file.name; $('#vname').title = file.name;
+  $('#vsub').textContent = '読み込み中…';
+  $('#vwarn').hidden = true; $('#playNote').hidden = true; $('#longNote').hidden = true;
+  $('#tStart').value = ''; $('#tEnd').value = '';
+  videoEl.src = v.url;
+  refresh();
+  try {
+    v.info = await probe(await MB(), file);
+  } catch (e) {
+    console.warn(file.name, e);
+    v.error = e.code === 'novideo' ? 'このファイルには動画が入っていません（音声だけのファイルは GIF にできません）'
+      : e.code === 'unsupported' ? '読み込めませんでした（対応していない形式です）' : (e.message || String(e));
+  }
+  if (state.video !== v) return; // 読んでいる間に別の動画に変わった
+  v.loading = false;
+  const i = v.info, warn = [];
+  if (i) {
+    $('#vsub').textContent = [`${i.w}×${i.h}`, fmtTime(i.dur), i.fps ? `${Math.round(i.fps)} コマ/秒` : '', codecName(i.codec), fmtSize(v.size)].filter(Boolean).join(' ・ ');
+    if (!HAS_DECODER) warn.push('このブラウザは、動画を読む機能（WebCodecs）に対応していません。Chrome か Edge の新しい版で開いてください。');
+    else if (!i.canDecode) warn.push(`この端末では、この動画の形式（${codecName(i.codec)}）を読めないので、GIF にできません。`);
+    if (i.dur > 10) { $('#tEnd').value = fmtTime(10, true); $('#longNote').hidden = false; }
+  } else {
+    $('#vsub').textContent = fmtSize(v.size);
+    warn.push(v.error);
+  }
+  $('#vwarn').textContent = warn.map(w => '⚠ ' + w).join(' ');
+  $('#vwarn').hidden = !warn.length;
+  refresh();
+}
+// 中身を調べる（長さ・画面の大きさ・形式・この端末で読めるか）
+async function probe(M, file) {
+  const input = new M.Input({ source: new M.BlobSource(file), formats: M.ALL_FORMATS });
+  try {
+    if (!(await input.canRead())) { const e = new Error('unsupported'); e.code = 'unsupported'; throw e; }
+    const t = await input.getPrimaryVideoTrack();
+    if (!t || !t.codec) { const e = new Error('no video'); e.code = 'novideo'; throw e; }
+    const dur = await input.computeDuration();
+    let fps = 0;
+    try { fps = (await t.computePacketStats(120)).averagePacketRate; } catch (e) { /* 分からなくてもよい */ }
+    return { dur, w: t.displayWidth, h: t.displayHeight, codec: t.codec, fps, canDecode: await t.canDecode() };
+  } finally { input.dispose(); }
+}
+function dropVideo() {
+  const v = state.video;
+  if (!v) return;
+  videoEl.pause(); videoEl.removeAttribute('src'); videoEl.load();
+  URL.revokeObjectURL(v.url);
+  state.video = null;
+}
+$('#vdel').addEventListener('click', () => { if (state.busy) return; dropVideo(); clearResult(); refresh(); });
+videoEl.addEventListener('error', () => { if (state.video) $('#playNote').hidden = false; });
+$('#setStart').addEventListener('click', () => { $('#tStart').value = fmtTime(videoEl.currentTime, true); $('#longNote').hidden = true; refresh(); });
+$('#setEnd').addEventListener('click', () => { $('#tEnd').value = fmtTime(videoEl.currentTime, true); $('#longNote').hidden = true; refresh(); });
+for (const id of ['#tStart', '#tEnd']) $(id).addEventListener('input', () => { $('#longNote').hidden = true; refresh(); });
+
+/* ---------- 作るものの見積もり（コマ数・大きさ） ---------- */
+function outSize(w, h, size) {
+  const k = Math.min(1, size / Math.max(w, h));
+  return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) };
+}
+// 回転・切り抜きのあとの大きさ（src の画素で）
+function editedDims(it, sw, sh) {
+  const swap = it.rot % 180 !== 0, c = it.crop || { w: 1, h: 1 };
+  return { w: (swap ? sh : sw) * c.w, h: (swap ? sw : sh) * c.h };
+}
+// 今の設定で作るもの。{ n: コマ数, w, h, delay: 1コマの時間（1/100 秒）, secs } か { err }。作れるものがなければ null
+function plan(s = settings()) {
+  const v = state.video;
+  if (v) {
+    if (!v.info) return null;
+    const dur = v.info.dur;
+    let a = parseTime($('#tStart').value), b = parseTime($('#tEnd').value);
+    if (Number.isNaN(a) || Number.isNaN(b)) return { err: '使う所の時間が読めません。「分:秒」で入れてください（例：0:05.5）' };
+    a = a == null ? 0 : a; b = b == null ? dur : Math.min(b, dur);
+    if (a >= dur) return { err: `始めが、動画の長さ（${fmtTime(dur, true)}）をこえています` };
+    if (b - a < 0.1) return { err: '終わりは、始めより後にしてください' };
+    const step = s.speed / s.fps, n = Math.max(1, Math.floor((b - a) / step + 1e-6));
+    return { kind: 'video', start: a, end: b, step, n, ...outSize(v.info.w, v.info.h, s.size), delay: 100 / s.fps, secs: n / s.fps };
+  }
+  const items = list.ok;
+  if (!items.length) return null;
+  const d = editedDims(items[0], items[0].w, items[0].h);
+  return { kind: 'images', items, n: items.length, ...outSize(d.w, d.h, s.size), delay: s.sec * 100, secs: items.length * s.sec };
+}
+function updateEst(p) {
+  const el = $('#est'), s = settings();
+  el.hidden = !p; el.classList.remove('bad');
+  if (!p) return;
+  if (p.err) { el.classList.add('bad'); el.textContent = '⚠ ' + p.err; return; }
+  const hi = p.w * p.h * p.n * QUALITY[s.q].bpp + 2000, lo = hi * 0.15;
+  el.innerHTML = '<div class="a"></div><div class="b"></div><div class="w" hidden></div>';
+  el.querySelector('.a').textContent = p.n === 1 ? `1 コマ（動かない GIF）・ ${p.w}×${p.h}` : `${p.n} コマ ・ ${p.w}×${p.h} ・ ${fmtSec(p.secs)}`;
+  el.querySelector('.b').textContent = `→ 目安 ${fmtSize(lo)}〜${fmtSize(hi)}（動きや色が多いほど大きい）`;
+  const w = el.querySelector('.w');
+  if (p.n > MAX_FRAMES) {
+    el.classList.add('bad');
+    w.textContent = `⚠ コマが多すぎます（${MAX_FRAMES} コマまで）。${p.kind === 'video' ? '使う所を短くするか、「なめらかさ」を下げるか、「速さ」を上げてください。' : '画像を減らしてください。'}`;
+    w.hidden = false;
+  } else if (hi > BIG) {
+    w.textContent = `⚠ 大きなファイルになるかもしれません。「大きさ」を小さくする${p.kind === 'video' ? '・「なめらかさ」を下げる・短くする' : ''}・「軽い」にする、で小さくなります。`;
+    w.hidden = false;
+  }
+}
+
+/* ---------- 設定 ---------- */
+const settings = () => {
+  const e = form.elements;
+  return { size: +e.size.value, fps: +e.fps.value, speed: +e.speed.value, sec: +e.sec.value, fit: e.fit.value, bg: e.bg.value === 'black' ? '#000' : '#fff', q: e.q.value, loop: e.loop.value };
+};
+function saveSettings() {
+  try {
+    const d = {};
+    for (const k in DEFAULTS) d[k] = form.elements[k].value;
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(d));
+  } catch (e) { /* 保存できなくても動作には影響なし */ }
+}
+function loadSettings() {
+  let d = {};
+  try { d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch (e) { /* 初回やブロック時は既定値 */ }
+  for (const [k, def] of Object.entries(DEFAULTS)) {
+    const el = form.elements[k], v = d[k];
+    el.value = typeof v === 'string' && [...el].some(r => r.value === v) ? v : def;
+  }
+}
+form.addEventListener('change', () => { saveSettings(); refresh(); });
+
+/* ---------- GIF を作る ---------- */
+let wake = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wake && navigator.wakeLock) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); }
+    else if (!on && wake) { const w = wake; wake = null; await w.release(); }
+  } catch (e) { /* 画面を消さない機能がなくても動く */ }
+}
+document.addEventListener('visibilitychange', () => { if (state.busy && document.visibilityState === 'visible') keepAwake(true); });
+
+function setProgress(done, total, label) {
+  $('#progress').hidden = false;
+  $('#pbar').style.width = (total ? Math.min(1, done / total) * 100 : 0) + '%';
+  $('#ptext').textContent = label;
+}
+// 進み具合（何コマ目か・ここまでの大きさ・残りの時間）を出し、ときどき画面を描かせる
+function progressor(p, enc) {
+  const t0 = performance.now();
+  let last = 0;
+  return async k => {
+    const now = performance.now();
+    if (now - last < 60 && k < p.n) return;
+    last = now;
+    const el = (now - t0) / 1000, eta = k > 2 && el > 3 && k < p.n ? `・あと約 ${fmtTime(el * (p.n - k) / k)}` : '';
+    setProgress(k, p.n, `GIF にしています… ${k} / ${p.n} コマ（${fmtSize(enc.size)}${eta}）`);
+    await wait(0);
+  };
+}
+const loopOf = s => (s.loop === 'once' ? null : 0);
+
+// 動画から：まず色の見本に 8 コマ取り出してパレットを決め、そのあと全部のコマを順に GIF にする
+async function fromVideo(p, s) {
+  const M = await MB(), Q = QUALITY[s.q];
+  const input = new M.Input({ source: new M.BlobSource(state.video.file), formats: M.ALL_FORMATS });
+  try {
+    const track = await input.getPrimaryVideoTrack();
+    if (!track || !(await track.canDecode())) throw new Error('この端末では、この動画の形式を読めません');
+    const first = await track.getFirstTimestamp();
+    const ts = k => first + p.start + k * p.step;
+    const sink = new M.CanvasSink(track, { width: p.w, height: p.h, fit: 'fill', poolSize: 2 });
+    const pixels = c => c.getContext('2d').getImageData(0, 0, p.w, p.h);
+    setProgress(0, 1, '色を調べています…');
+    const NS = Math.min(8, p.n), samples = [];
+    for await (const c of sink.canvasesAtTimestamps([...Array(NS)].map((_, i) => ts(Math.floor((i + 0.5) * p.n / NS))))) {
+      if (state.cancel) return null;
+      if (c) samples.push(pixels(c.canvas));
+    }
+    if (!samples.length) throw new Error('動画からコマを取り出せませんでした');
+    const enc = new GIF.Encoder(p.w, p.h, { palette: GIF.palette(samples, Q.n), loop: loopOf(s) });
+    samples.length = 0;
+    const step = progressor(p, enc);
+    let k = 0, skipped = 0;
+    for await (const c of sink.canvasesAtTimestamps([...Array(p.n)].map((_, i) => ts(i)))) {
+      if (state.cancel) return null;
+      if (c) { enc.addFrame(pixels(c.canvas).data, p.delay * (1 + skipped), Q); skipped = 0; }
+      else skipped++; // そのときのコマがない（動画の始まりより前）：次のコマを長く見せる
+      await step(++k);
+    }
+    if (!enc.frames) throw new Error('動画からコマを取り出せませんでした');
+    return enc.finish();
+  } finally { input.dispose(); }
+}
+
+// 画像を1コマの枠（W×H）に入れる。枠は余白の色で塗り、画像は真ん中に（余白をつける／はみ出しを切る）
+function frameOf(src, it, W, H, s) {
+  const c = newCanvas(W, H), x = c.getContext('2d', { willReadFrequently: true });
+  x.fillStyle = s.bg; x.fillRect(0, 0, W, H);
+  const d = editedDims(it, src.width, src.height);
+  const k = s.fit === 'cover' ? Math.max(W / d.w, H / d.h) : Math.min(W / d.w, H / d.h);
+  // 大きな写真は、先に半分ずつ縮めてから回す（一気に縮めるとギザギザになる）
+  const pre = k < 0.5 ? downscale(src, Math.max(1, Math.round(src.width * k)), Math.max(1, Math.round(src.height * k))) : src;
+  const ed = drawEdited(newCanvas(1, 1), pre, it, pre === src ? Math.min(1, k) : 1);
+  const dw = d.w * k, dh = d.h * k;
+  x.imageSmoothingQuality = 'high';
+  x.drawImage(ed, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  if (pre !== src) pre.width = pre.height = 0;
+  ed.width = ed.height = 0;
+  const img = x.getImageData(0, 0, W, H);
+  c.width = c.height = 0;
+  return img;
+}
+// 画像から：色の見本は一覧の小さな絵（もう読んである）で作り、そのあと1枚ずつ読み直して GIF にする
+async function fromImages(p, s) {
+  const Q = QUALITY[s.q], items = p.items;
+  setProgress(0, 1, '色を調べています…');
+  const ks = Math.min(1, 240 / Math.max(p.w, p.h)), sw = Math.max(1, Math.round(p.w * ks)), sh = Math.max(1, Math.round(p.h * ks));
+  const pick = items.length <= 24 ? items : [...Array(24)].map((_, i) => items[Math.floor((i + 0.5) * items.length / 24)]);
+  const samples = pick.map(it => frameOf(it.thumb, it, sw, sh, s));
+  const enc = new GIF.Encoder(p.w, p.h, { palette: GIF.palette(samples, Q.n), loop: loopOf(s) });
+  samples.length = 0;
+  const step = progressor(p, enc);
+  for (let k = 0; k < items.length; k++) {
+    if (state.cancel) return null;
+    const it = items[k], bmp = await createImageBitmap(it.file, { imageOrientation: 'from-image' });
+    let img;
+    try { img = frameOf(bmp, it, p.w, p.h, s); } finally { bmp.close(); }
+    enc.addFrame(img.data, p.delay, Q);
+    await step(k + 1);
+  }
+  return enc.finish();
+}
+
+function outName() {
+  if (state.video) return (sanitize(stem(state.video.name)) || 'video') + '.gif';
+  const f = list.ok[0];
+  return (sanitize(stem(f.name)) || 'images') + (/\.gif$/i.test(f.name) ? '_アニメ' : '') + '.gif';
+}
+$('#make').addEventListener('click', async () => {
+  const s = settings(), p = plan(s);
+  if (state.busy || !p || p.err || p.n > MAX_FRAMES) return;
+  state.busy = true; state.cancel = false;
+  clearResult(); list.setBusy(true); refresh();
+  keepAwake(true);
+  try {
+    const bytes = p.kind === 'video' ? await fromVideo(p, s) : await fromImages(p, s);
+    if (!bytes) { toast('やめました'); return; }
+    state.out = new File([bytes], outName(), { type: 'image/gif' });
+    showResult(p);
+  } catch (e) {
+    console.error(e);
+    if (!state.cancel) showError(e);
+  } finally {
+    state.busy = false; state.cancel = false; $('#progress').hidden = true;
+    keepAwake(false); list.setBusy(false); refresh();
+  }
+});
+$('#cancel').addEventListener('click', () => {
+  if (!state.busy) return;
+  state.cancel = true;
+  $('#ptext').textContent = 'やめています…';
+});
+window.addEventListener('beforeunload', e => { if (state.busy) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------- できあがり ---------- */
+function clearResult() {
+  $('#result').hidden = true; $('#result').textContent = '';
+  if (state.url) { URL.revokeObjectURL(state.url); state.url = null; }
+  state.out = null;
+}
+function showResult(p) {
+  const f = state.out, r = $('#result');
+  state.url = URL.createObjectURL(f);
+  r.classList.remove('warn');
+  r.innerHTML = `<div class="head">✓ できました</div><img class="pv" alt="できた GIF"><div class="line"></div><div class="wl" hidden></div>
+    <div class="btns"><button type="button" class="btn save" id="save">保存する</button>${canShareFiles([f]) ? '<button type="button" class="btn" id="share">共有</button>' : ''}</div>
+    <div class="small muted">ここで動きを確かめてから保存できます。保存先：ダウンロードフォルダ</div>`;
+  r.querySelector('.pv').src = state.url;
+  r.querySelector('.line').textContent = `${f.name} ・ ${p.w}×${p.h} ・ ${p.n === 1 ? '1 コマ' : `${p.n} コマ ・ ${fmtSec(p.secs)}`} ・ ${fmtSize(f.size)}`;
+  if (f.size > BIG) {
+    const w = r.querySelector('.wl');
+    w.textContent = '⚠ 大きなファイルです。送るアプリによっては、送れなかったり、自動で小さくされたりします。「大きさ」を小さくする・「軽い」にする・短くする、で小さくなります。';
+    w.hidden = false;
+  }
+  r.querySelector('#save').addEventListener('click', () => { saveBlob(f, f.name); toast('保存しました（ダウンロードフォルダ）'); });
+  const sh = r.querySelector('#share');
+  if (sh) sh.addEventListener('click', () => shareFiles([f]));
+  r.hidden = false;
+}
+function showError(e) {
+  const r = $('#result');
+  r.classList.add('warn');
+  r.innerHTML = '<div class="head">うまく作れませんでした</div><div class="small line"></div>';
+  r.querySelector('.line').textContent = e && e.message || String(e);
+  r.hidden = false;
+}
+
+/* ---------- 画面の表示を整える ---------- */
+function refresh() {
+  const v = state.video, n = list.items.length, mode = v ? 'video' : n ? 'images' : null;
+  $('#vbox').hidden = !v;
+  $('#listbar').hidden = $('#hint').hidden = !n;
+  $('#drop').classList.toggle('compact', !!mode);
+  $('#dropTitle').textContent = v ? (TOUCH ? 'タップして、ほかの動画にする' : 'ほかの動画にする（ドラッグ＆ドロップ / クリック）')
+    : n ? (TOUCH ? 'タップして画像を追加' : '画像を追加（ドラッグ＆ドロップ / クリック）')
+    : (TOUCH ? 'タップして動画か画像を選ぶ' : 'ここに動画か画像をドラッグ＆ドロップ');
+  const ok = list.ok;
+  $('#count').textContent = (n ? `${ok.length} 枚` : '') + (list.loading ? '　読み込み中…' : '') + (list.errors ? `　読み込めない ${list.errors} 件` : '');
+  $('#vset').hidden = mode !== 'video';
+  $('#iset').hidden = mode !== 'images';
+  $('#bgRow').hidden = form.elements.fit.value === 'cover';
+  const p = state.busy ? null : plan();
+  const unreadable = v && v.info && (!v.info.canDecode || !HAS_DECODER);
+  if (!state.busy) updateEst(unreadable ? null : p);
+  const blocked = !p || p.err || p.n > MAX_FRAMES || list.loading || (v && (v.loading || !v.info || !v.info.canDecode || !HAS_DECODER));
+  const mk = $('#make');
+  mk.disabled = state.busy || !!blocked;
+  mk.hidden = state.busy; $('#cancel').hidden = !state.busy;
+  for (const el of form.querySelectorAll('input')) el.disabled = state.busy;
+  for (const el of $('#vbox').querySelectorAll('input,button')) el.disabled = state.busy;
+}
+
+loadSettings();
+refresh();
+</script>
+</body>
+</html>

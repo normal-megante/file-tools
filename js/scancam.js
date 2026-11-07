@@ -13,23 +13,37 @@ const ScanCam = (() => {
   const GYRO_T = 10;          // スマホの回転の速さ（度/秒）。これ未満なら「止まっている」（取れる機種だけ）
   const CHANGE_T = 9;         // 前に撮ったときの映像との差。これを超えたら「次のページになった」とみなす
   const BLUR_MAX = 2.6;       // 映像のぼやけ（Scan.measureBlur の blur）。これより大きいと「ピントが合っていない」
+  const WAIT_MAX = 2000;      // シャッターを押してから、止まるのを待つ長さ。過ぎたらそのまま撮る
+  const TRIES = 3;            // ぶれていたら撮り直す回数（はじめの1枚を入れて）
+  const DARK_LUM = 70;        // 映像の明るさ（0〜255 の平均）。これより暗いと「暗い」
+  const DARK_FPS = 16;        // 映像のコマ数（毎秒）。暗いとスマホはコマを減らして長く光を取り込む（＝ぶれやすい）
   const el = id => document.getElementById(id);
   const st = {
     stream: null, track: null, caps: {}, ic: null, photoSettings: null, timer: 0, onShot: null, single: false,
     small: null, prevSig: null, steadySince: 0, gyro: 0, gyroAt: 0, lastDetect: 0, dets: [], quad: null, quadSeen: 0,
     widths: [], lastShotSig: null, armed: true, busy: false, count: 0, auto: true, focus: null, pushed: false, gen: 0,
+    pending: 0, rate: null, warn: Infinity, darkTicks: 0, darkOn: false, frames: [],
   };
   try { st.auto = localStorage.getItem(AUTO_KEY) !== 'off'; } catch (e) { /* 既定はオン */ }
 
   const setStatus = t => { if (el('shStatus').textContent !== t) el('shStatus').textContent = t; };
+  const setNote = t => { if (el('shNote').textContent !== t) el('shNote').textContent = t; };
   const now = () => performance.now();
+  // 画面の上の小さな説明（撮り方のコツ）。暗いときは、その注意に変わる
+  function noteText(dark) {
+    if (dark) return '暗いと、ぶれやすくなります。' + (st.caps.torch && el('shTorch').getAttribute('aria-pressed') !== 'true' ? '右下の「ライト」をつけるか、明るい所で撮ってください。' : 'できれば明るい所で撮ってください。');
+    return (st.auto ? '止めて持つと自動で撮ります。' : 'シャッターを押すと、止まった瞬間に撮ります。')
+      + 'ぶれていたら、もう一度撮ります。両手で持ち、ひじを机につけると、ぶれにくくなります。'
+      + (st.caps.focusMode ? '画面をタップすると、そこにピントを合わせます。' : '');
+  }
 
   /* ---------- 開く・閉じる ---------- */
-  async function open({ onShot, single = false } = {}) {
+  //   rate(file) … 撮った写真のぶれの大きさを返す（なくてもよい）。warn 以上なら、もう一度撮る
+  async function open({ onShot, single = false, rate = null, warn = Infinity } = {}) {
     if (st.stream) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('このブラウザではカメラを使えません'); return false; }
     const gen = ++st.gen;
-    Object.assign(st, { onShot, single, count: 0, armed: true, lastShotSig: null, prevSig: null, steadySince: 0, dets: [], quad: null, widths: [], focus: null, busy: false });
+    Object.assign(st, { onShot, single, rate, warn, count: 0, armed: true, lastShotSig: null, prevSig: null, steadySince: 0, dets: [], quad: null, widths: [], focus: null, busy: false, pending: 0, darkTicks: 0, darkOn: false, frames: [] });
     el('shDone').textContent = single ? 'やめる' : '完了';
     el('shLast').hidden = true;
     el('shTorch').hidden = true; el('shTorch').setAttribute('aria-pressed', 'false');
@@ -68,10 +82,32 @@ const ScanCam = (() => {
       try { st.ic = new ImageCapture(st.track); } catch (e) { st.ic = null; }
     }
     el('shShutter').disabled = false;
+    setNote(noteText(false));
     window.addEventListener('devicemotion', onMotion);
+    watchFps(v, gen);
     layout();
     tick();
     return true;
+  }
+  // 映像のコマ数を数える（暗いと減る）。数えられないブラウザでは何もしない
+  function watchFps(v, gen) {
+    if (!v.requestVideoFrameCallback) return;
+    const cb = (t, meta) => {
+      if (gen !== st.gen) return;
+      const f = st.frames; f.push([t, meta && meta.presentedFrames]);
+      while (f.length > 2 && t - f[0][0] > 2000) f.shift();
+      v.requestVideoFrameCallback(cb);
+    };
+    v.requestVideoFrameCallback(cb);
+  }
+  function fps() {
+    const f = st.frames;
+    if (f.length < 3) return Infinity;
+    const a = f[0], b = f[f.length - 1], dt = (b[0] - a[0]) / 1000;
+    if (dt < 1.5) return Infinity;
+    // 描けなかったコマも数える（このページが忙しくてコマを飛ばしても、暗いとまちがえない）
+    const n = Number.isFinite(a[1]) && Number.isFinite(b[1]) && b[1] > a[1] ? b[1] - a[1] : f.length - 1;
+    return n / dt;
   }
   function close(fromHistory) {
     st.gen++;
@@ -149,12 +185,13 @@ const ScanCam = (() => {
   function tick() {
     if (!st.stream) return;
     const v = el('shVideo');
-    if (v.readyState >= 2 && v.videoWidth && !st.busy) {
-      try { analyze(v); } catch (e) { console.error(e); }
+    // 撮っている間（st.busy）も、止まっているかだけは調べ続ける（ぶれていて撮り直すときに使う）
+    if (v.readyState >= 2 && v.videoWidth) {
+      try { analyze(v, st.busy); } catch (e) { console.error(e); }
     }
     if (st.stream) st.timer = setTimeout(tick, TICK_MS);
   }
-  function analyze(v) {
+  function analyze(v, passive) {
     const t = now(), vw = v.videoWidth, vh = v.videoHeight;
     const s = 320 / Math.max(vw, vh), sw = Math.max(1, Math.round(vw * s)), sh = Math.max(1, Math.round(vh * s));
     if (!st.small || st.small.width !== sw || st.small.height !== sh) { st.small = newCanvas(sw, sh); layout(); }
@@ -192,7 +229,25 @@ const ScanCam = (() => {
       if (st.widths.length > 12) st.widths.shift();
     }
     const fs = focusState(), stillFor = st.steadySince ? t - st.steadySince : 0;
-    // ④ 自動シャッター
+    // 暗さ（映像の平均の明るさか、コマ数で見る。1 秒くらい続いたら注意を出す）
+    let lum = 0; for (let i = 0; i < sig.length; i++) lum += sig[i];
+    lum /= sig.length;
+    const dark = lum < DARK_LUM || fps() < DARK_FPS;
+    st.darkTicks = dark ? Math.min(20, st.darkTicks + 1) : Math.max(0, st.darkTicks - 1);
+    // 1 秒くらい暗いと注意を出し、出したら、しばらく明るいままになるまで消さない（明るさが境目のとき、点いたり消えたりしないように）
+    st.darkOn = st.darkOn ? st.darkTicks > 3 : st.darkTicks >= 10;
+    setNote(noteText(st.darkOn));
+    if (passive) { draw(found, 0); return; }
+    // ④ シャッターボタンを押したあと：押したときの揺れがおさまって、止まった瞬間に撮る
+    if (st.pending) {
+      const since = t - st.pending, calm = st.steadySince ? t - Math.max(st.steadySince, st.pending + 150) : 0;
+      const ready = calm >= 300 && fs !== 'blurry' && (fs === 'sharp' || calm >= 800);
+      setStatus('そのまま…（止まったら撮ります）');
+      if (ready || since >= WAIT_MAX) { st.pending = 0; draw(found, 1); shoot(); return; }
+      draw(found, Math.min(1, since / WAIT_MAX));
+      return;
+    }
+    // ⑤ 自動シャッター
     let progress = 0;
     if (!st.auto) setStatus('シャッターボタンで撮ってください');
     else if (!st.armed) setStatus(st.count ? '撮りました。次のページにしてください' : 'そのまま');
@@ -277,31 +332,65 @@ const ScanCam = (() => {
     if (base === lastBase) dup++; else { lastBase = base; dup = 0; } // 同じ秒に撮ったら _2, _3 …
     return base + (dup ? '_' + (dup + 1) : '') + '.jpg';
   }
+  // 1枚撮る（写真を撮る機能があればそれで、なければ映像の1コマ）
+  async function capture(v, ref, name) {
+    const fl = el('shFlash'); fl.classList.add('on'); setTimeout(() => fl.classList.remove('on'), 60);
+    if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(40);
+    if (st.ic) {
+      try { return await orient(await takePhoto(), ref, name); }
+      catch (e) { console.warn('takePhoto に失敗。映像の1コマを使います', e); st.ic = null; }
+    }
+    const c = newCanvas(v.videoWidth, v.videoHeight);
+    c.getContext('2d').drawImage(v, 0, 0);
+    const file = new File([encodeCanvas(c, 'image/jpeg', 0.92)], name, { type: 'image/jpeg' });
+    c.width = c.height = 0;
+    return file;
+  }
+  // 止まるまで待つ（最大 maxMs）。撮っている間も analyze が「止まっているか」を調べ続けている
+  function waitSteady(maxMs) {
+    const t0 = now();
+    st.steadySince = 0; st.widths = [];
+    return new Promise(res => {
+      const f = () => {
+        const t = now();
+        if (!st.stream || (st.steadySince && t - st.steadySince >= 350 && focusState() !== 'blurry') || t - t0 >= maxMs) return res();
+        setTimeout(f, 50);
+      };
+      setTimeout(f, 50);
+    });
+  }
   async function shoot() {
     if (st.busy || !st.stream) return;
     const gen = st.gen, v = el('shVideo'), vw = v.videoWidth, vh = v.videoHeight;
     if (!vw) return;
-    st.busy = true; el('shShutter').disabled = true;
-    const fl = el('shFlash'); fl.classList.add('on'); setTimeout(() => fl.classList.remove('on'), 60);
-    if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(40);
-    setStatus('撮っています…');
+    st.busy = true; st.pending = 0; el('shShutter').disabled = true;
     // 今の映像（向きの見比べ・サムネイル・次のページの見分けに使う）
     const s = 320 / Math.max(vw, vh), ref = newCanvas(Math.round(vw * s), Math.round(vh * s));
     ref.getContext('2d').drawImage(v, 0, 0, ref.width, ref.height);
     const sig = signature(ref.getContext('2d').getImageData(0, 0, ref.width, ref.height));
     const name = fileName();
-    let file = null;
-    if (st.ic) {
-      try { file = await orient(await takePhoto(), ref, name); }
-      catch (e) { console.warn('takePhoto に失敗。映像の1コマを使います', e); st.ic = null; }
+    // ぶれていたら、止まるのを待ってもう一度（いちばんくっきりした1枚を使う）
+    let best = null;
+    for (let n = 0; n < TRIES; n++) {
+      if (n > 0) {
+        setStatus('ぶれていたので、もう一度撮ります。そのまま…');
+        await waitSteady(1500);
+        if (gen !== st.gen) return;
+      }
+      setStatus('撮っています…');
+      const file = await capture(v, ref, name);
+      if (gen !== st.gen) return; // 撮っている間に閉じられた
+      let score = 0;
+      if (st.rate) {
+        setStatus('ぶれを確かめています…');
+        try { score = await st.rate(file); } catch (e) { console.warn(e); score = 0; }
+        if (gen !== st.gen) return;
+      }
+      if (!best || score < best.score) best = { file, score };
+      if (!(score >= st.warn)) break;
     }
-    if (gen !== st.gen) return; // 撮っている間に閉じられた
-    if (!file) {
-      const c = newCanvas(vw, vh);
-      c.getContext('2d').drawImage(v, 0, 0);
-      file = new File([encodeCanvas(c, 'image/jpeg', 0.92)], name, { type: 'image/jpeg' });
-      c.width = c.height = 0;
-    }
+    const file = best.file;
+    if (best.score >= st.warn) toast('少しぶれています。明るい所で、両手で持って撮ると、くっきりします');
     st.count++; st.lastShotSig = sig; st.armed = false; st.steadySince = 0; st.widths = [];
     const last = el('shLast'), lx = last.getContext('2d'), m = Math.min(ref.width, ref.height);
     lx.drawImage(ref, (ref.width - m) / 2, (ref.height - m) / 2, m, m, 0, 0, last.width, last.height);
@@ -313,18 +402,26 @@ const ScanCam = (() => {
   }
 
   /* ---------- ボタン・タップ ---------- */
-  el('shShutter').addEventListener('click', () => { st.armed = true; shoot(); });
+  // シャッター：押したときの揺れで写真がぶれないよう、止まった瞬間に撮る（もう一度押せば、すぐ撮る）
+  el('shShutter').addEventListener('click', () => {
+    st.armed = true;
+    if (st.busy) return;
+    if (st.pending) { shoot(); return; }
+    st.pending = now(); st.steadySince = 0; st.widths = [];
+    setStatus('そのまま…（止まったら撮ります）');
+  });
   el('shDone').addEventListener('click', () => close());
   el('shAuto').addEventListener('click', () => {
     st.auto = !st.auto;
     el('shAuto').setAttribute('aria-pressed', String(st.auto));
+    setNote(noteText(st.darkOn));
     try { localStorage.setItem(AUTO_KEY, st.auto ? 'on' : 'off'); } catch (e) { /* 覚えられなくても動く */ }
   });
   el('shTorch').addEventListener('click', () => {
     if (!st.track) return;
     const on = el('shTorch').getAttribute('aria-pressed') !== 'true';
     st.track.applyConstraints({ advanced: [{ torch: on }] })
-      .then(() => el('shTorch').setAttribute('aria-pressed', String(on)))
+      .then(() => { el('shTorch').setAttribute('aria-pressed', String(on)); st.darkTicks = 0; st.darkOn = false; setNote(noteText(false)); })
       .catch(() => toast('ライトをつけられませんでした'));
   });
   // 画面をタップしたところにピントを合わせる（できる機種だけ）

@@ -558,11 +558,15 @@ const Scan = (() => {
   // v: 紙の明るさでそろえた明るさ（紙≒1）。字を見分けて、濃さを決めた「暗さ」（0=白〜1=黒）を返す。
   //  ① 細かい背景（字より太いものはそのまま）を「明るいほうへ広げて戻す」で求め、そこからの差＝細い線の暗さ
   //     （蛍光ペンの帯や大きな影・色の面は線ではないので、ここでは 0 になる）
-  //  ② 紙の部分のざらつきの大きさを測り、それより確かに暗い所だけを字とみなす
+  //  ② 紙の部分のざらつきの大きさを場所ごとに測り、それより確かに暗い所だけを字とみなす
+  //     （影の所はカメラのざらつきが大きく、全体で1つの値だと、ざらつきを「うすい字」とまちがえて濃くしてしまった）
+  //     さらに、はっきり暗い所につながっていない点々は捨てる（字の線はつながっているが、ざらつきはばらばら）
   //  ③ 場所ごとの字の濃さを測って、うすい所ほど強く濃くする（濃い所と同じくらいの濃さにそろえる）
+  // 返す値：{ dark: 暗さ, vs: 少しぼかした明るさ, sig: 場所ごとのざらつき }
   function inkDarkness(v, W, H, s, scale, blurOut) {
     const N = W * H;
-    const vs = gaussBlur(v, W, H, Math.max(0.5, 0.8 * scale));
+    // 線かどうかは少しぼかして見る（ざらつきはならされて、ある程度の長さのある線は残る）
+    const vs = gaussBlur(v, W, H, Math.max(0.5, 1.6 * scale));
     const R = Math.max(2, Math.round(8 * scale + 2 * blurOut));
     // 細い暗い線を、まわりの明るさで埋めたもの（なめらかなので、半分の大きさで求めて広げる。速さのため）
     let bg;
@@ -578,12 +582,33 @@ const Scan = (() => {
     } else bg = morph(morph(vs, W, H, R, true), W, H, R, false);
     const D = new Float32Array(N), Ds = new Float32Array(N);
     for (let i = 0; i < N; i++) { const b = bg[i]; D[i] = b - v[i]; Ds[i] = b - vs[i]; }
-    // ② 紙のざらつき（ほとんどの画素は紙なので、真ん中あたりの散らばりで測る）
-    const [q50, q25, q75] = quantiles(Ds, [0.5, 0.25, 0.75]);
-    const sigma = Math.max(0.004, (q75 - q25) / 1.349), base = q50;
-    const k = 3.2 - 1.8 * s, lo = base + k * sigma, hi = lo + 2 * sigma + 0.01;
-    const mask = new Float32Array(N);
-    for (let i = 0; i < N; i++) { const t = (Ds[i] - lo) / (hi - lo); mask[i] = t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t); }
+    // ② 紙のざらつき（場所ごと。ほとんどの画素は紙なので、真ん中あたりの散らばりで測る）
+    const { sig: S, base: B } = localNoise(Ds, W, H);
+    const k = 3.2 - 1.8 * s, KS = 2.5, AMIN = Math.max(4, Math.round(20 * scale * scale));
+    const mask = new Float32Array(N), st = new Uint8Array(N), stack = new Int32Array(N);
+    // いちばん外側の1画素は使わない（となりを調べるときに、はみ出しを気にしなくてよいように）
+    for (let y = 1; y < H - 1; y++) for (let i = y * W + 1, e = y * W + W - 1; i < e; i++) {
+      const lo = B[i] + k * S[i], t = (Ds[i] - lo) / (2 * S[i] + 0.01);
+      if (t <= 0) continue;
+      mask[i] = t >= 1 ? 1 : t * t * (3 - 2 * t);
+      st[i] = 1;
+    }
+    // つながっている所ごとに調べる：大きい（字の線は長い）か、はっきり暗い所があれば字。
+    // どちらでもない小さな点々はざらつきなので捨てる
+    const NB8 = [-W - 1, -W, -W + 1, -1, 1, W - 1, W, W + 1];
+    for (let i0 = W; i0 < N - W; i0++) {
+      if (st[i0] !== 1) continue;
+      let sp = 0, n = 0, strong = false;
+      st[i0] = 4; stack[sp++] = i0;
+      while (sp) {
+        const i = stack[--sp];
+        stack[N - 1 - n++] = i; // 見た画素を後ろから記録
+        if (!strong && Ds[i] > B[i] + (k + KS) * S[i]) strong = true;
+        for (let q = 0; q < 8; q++) { const j = i + NB8[q]; if (st[j] === 1) { st[j] = 4; stack[sp++] = j; } }
+      }
+      const keep = strong || n >= AMIN;
+      for (let q = 0; q < n; q++) { const i = stack[N - 1 - q]; st[i] = keep ? 2 : 3; if (!keep) mask[i] = 0; }
+    }
     // ③ 場所ごとの字の濃さ（字の画素の 70% の位置）。マスごとのヒストグラムで求める
     const cell = Math.max(16, Math.round(Math.max(W, H) / 10)), gw = Math.ceil(W / cell), gh = Math.ceil(H / cell), G = gw * gh;
     const NB = 64, BW = 0.8 / NB, hist = new Int32Array((G + 1) * NB), cnt = new Int32Array(G + 1);
@@ -591,7 +616,7 @@ const Scan = (() => {
       const row = ((y / cell) | 0) * gw, o = y * W;
       for (let x = 0; x < W; x++) {
         const i = o + x; if (mask[i] < 0.5) continue;
-        const g = row + ((x / cell) | 0), b = Math.min(NB - 1, Math.max(0, ((Ds[i] - base) / BW) | 0));
+        const g = row + ((x / cell) | 0), b = Math.min(NB - 1, Math.max(0, ((Ds[i] - B[i]) / BW) | 0));
         hist[g * NB + b]++; cnt[g]++; hist[G * NB + b]++; cnt[G]++;
       }
     }
@@ -603,14 +628,42 @@ const Scan = (() => {
     lvl = gaussBlur(lvl, gw, gh, 0.8);
     const L = upsampleGrid(lvl, gw, gh, cell, W, H);
     // 濃さ：字の濃さ L のところで Tgt（ほぼ黒）、うすい所ほど持ち上げる（p<1 のカーブ）
+    //   ざらつきの大きい所では、ざらつきの 3 倍より薄いものを「うすい字」として持ち上げすぎない
     const p = 0.9 - 0.5 * s, Tgt = 0.8 + 0.18 * s, out = bg; // bg の入れ物を使い回す
     for (let i = 0; i < N; i++) {
       const m = mask[i];
       if (m <= 0) { out[i] = 0; continue; }
-      const t = (D[i] - base) / L[i];
+      const Li = Math.max(L[i], 3 * S[i]), t = (D[i] - B[i]) / Li;
       out[i] = t <= 0 ? 0 : m * (t >= 1 ? Tgt + (1 - Tgt) * Math.min(1, t - 1) : Tgt * Math.pow(t, p));
     }
-    return out;
+    return { dark: out, vs, sig: S };
+  }
+
+  // 場所ごとの紙のざらつき（σ）と、その真ん中の値。マスごとに「暗くない側の半分」の散らばりで測る
+  // （字が少しあっても影響が少ない。1.4 倍は合成写真で、ざらつきが消えて、うすい字が残るように合わせた）。
+  // ざらつきの大きいマスのとなりも少し大きめにする（影のふちで、ざらつきがはみ出さないように）
+  function localNoise(Ds, W, H) {
+    const c = Math.max(16, Math.round(Math.max(W, H) / 24)), gw = Math.ceil(W / c), gh = Math.ceil(H / c), G = gw * gh;
+    const st = c >= 64 ? 3 : 2, sg = new Float32Array(G), bs = new Float32Array(G), buf = new Float32Array(Math.ceil(c / st) * Math.ceil(c / st) + 4);
+    const rt = 1.4;
+    for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+      let n = 0;
+      const y1 = Math.min(H, (gy + 1) * c), x1 = Math.min(W, (gx + 1) * c);
+      for (let y = gy * c; y < y1; y += st) for (let x = gx * c, o = y * W; x < x1; x += st) buf[n++] = Ds[o + x];
+      const a = buf.subarray(0, n).sort(), b25 = a[Math.round(0.25 * (n - 1))], b50 = a[Math.round(0.5 * (n - 1))];
+      sg[gy * gw + gx] = Math.max(0.004, (b50 - b25) * rt);
+      bs[gy * gw + gx] = b50;
+    }
+    const sm = new Float32Array(G);
+    for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+      let m = sg[gy * gw + gx];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const yy = gy + dy, xx = gx + dx;
+        if (yy >= 0 && yy < gh && xx >= 0 && xx < gw) m = Math.max(m, 0.5 * (m + sg[yy * gw + xx]));
+      }
+      sm[gy * gw + gx] = m;
+    }
+    return { sig: upsampleGrid(gaussBlur(sm, gw, gh, 0.7), gw, gh, c, W, H), base: upsampleGrid(gaussBlur(bs, gw, gh, 0.7), gw, gh, c, W, H) };
   }
 
   // mode: 'color' | 'gray' | 'bw' | 'none'、strength: 0〜1（線の濃さ）。img を書き換えて返す
@@ -673,12 +726,13 @@ const Scan = (() => {
     // ぼやけた写真は、ぼやけの大きさに合わせて輪郭を強める（少しのピンぼけなら読みやすくなる）
     if (blur >= 0.7) sharpen(v, W, H, Math.max(1, Math.round(1.2 * blur)), Math.min(1.6, 0.55 * blur));
     sharpen(v, W, H, Math.max(1, Math.round(1.5 * scale)), 0.3 + 0.4 * s);
-    const dark = inkDarkness(v, W, H, s, scale, blur);
+    const { dark, vs, sig } = inkDarkness(v, W, H, s, scale, blur);
     // ノートの罫線のような「紙の端まで続く長いまっすぐな線」は字ではないので、濃くしすぎない（元の濃さに近いまま）。
     // 横線は横方向に、縦線は縦方向に、ページ幅の 1/12 より短いものを消す（細らせてから太らせる）と残る。半分の大きさで調べる
+    // 白黒では、灰色の線（表のマス目・罫線）も黒い線として残す（元の濃さのままだと白になって消えてしまうため）
     const w2 = W >> 1, h2 = H >> 1;
     let line = null;
-    if (w2 >= 8 && h2 >= 8) {
+    if (mode !== 'bw' && w2 >= 8 && h2 >= 8) {
       const half = maxHalf(dark, W, H), rh = Math.max(2, Math.round(w2 / 24)), rv = Math.max(2, Math.round(h2 / 24));
       // 少し傾いていても途切れないよう、線の太さ方向に 1 画素広げてから調べる
       const oh = morph1(morph1(morph1(half, w2, h2, 1, true, false), w2, h2, rh, false, true), w2, h2, rh, true, true);
@@ -695,7 +749,8 @@ const Scan = (() => {
           if (ln > 0.02 && ex > 0) k -= ex * Math.min(1, ln / Math.max(k, 1e-3)) * 0.85;
         }
         // 太くて濃いもの（太いマーカー・塗りつぶし）は線として見分けられないことがあるので、元の濃さでも黒くする
-        const c = (0.85 - v[i]) / 0.55;
+        // （ざらつきの点々が拾われないよう、少しぼかした明るさで、ざらつきの分を差し引いて見る）
+        const c = (0.85 - vs[i] - sig[i]) / 0.55;
         if (c > k) k = c > 1 ? 1 : c;
         dark[i] = k;
       }
@@ -707,14 +762,18 @@ const Scan = (() => {
       for (let i = 0; i < N; i++) dark[i] += a * (md[i] - dark[i]);
     }
     if (mode === 'bw') {
-      for (let i = 0, j = 0; i < N; i++, j += 4) d[j] = d[j + 1] = d[j + 2] = clamp((0.5 - dark[i]) / 0.08 + 0.5, 0, 1) * 255;
+      // 濃くした字はほぼ黒なので、少し低めのしきい値で、うすい線も黒に
+      for (let i = 0, j = 0; i < N; i++, j += 4) d[j] = d[j + 1] = d[j + 2] = clamp((0.4 - dark[i]) / 0.08 + 0.5, 0, 1) * 255;
     } else if (mode === 'gray') {
       for (let i = 0, j = 0; i < N; i++, j += 4) d[j] = d[j + 1] = d[j + 2] = (1 - dark[i]) * 255;
     } else {
       // 明るさは決めた濃さに。色み（明るさとの差）は少し強めて足し戻す（濃くした字は、色も同じくらい強める）
+      // ざらつきくらいの小さな色み（影の所のカメラの色むら）は消す。ペンや蛍光ペンの色はずっと強いので残る
       for (let i = 0, j = 0; i < N; i++, j += 4) {
         const r = d[j], g = d[j + 1], b = d[j + 2], L = 0.299 * r + 0.587 * g + 0.114 * b, D0 = 1 - L / 255, k = dark[i];
-        const sat = 1.3 * (k > D0 ? Math.min(2.2, k / Math.max(D0, 0.04)) : 1), Lp = (1 - k) * 255;
+        const cr = Math.max(Math.abs(r - L), Math.abs(g - L), Math.abs(b - L)), c0 = 255 * (0.012 + 1.2 * sig[i]);
+        const keep = cr <= c0 ? 0 : cr >= 2 * c0 ? 1 : (cr - c0) / c0;
+        const sat = keep * 1.3 * (k > D0 ? Math.min(2.2, k / Math.max(D0, 0.04)) : 1), Lp = (1 - k) * 255;
         d[j] = Lp + (r - L) * sat; d[j + 1] = Lp + (g - L) * sat; d[j + 2] = Lp + (b - L) * sat;
       }
     }

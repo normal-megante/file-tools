@@ -78,7 +78,7 @@
       <div class="cam">
         <button type="button" class="primary" id="shootBtn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg>カメラで撮る（自動シャッター）</button>
         <button type="button" class="btn" id="camBtn">スマホのカメラアプリで撮る</button>
-        <p class="note" id="camNote">書類が枠に入って、スマホが止まり、ピントが合うと自動で撮ります（ぶれにくい）。続けて何枚でも撮れます。暗い所や細かい字は、スマホのカメラアプリのほうがきれいに撮れることもあります。</p>
+        <p class="note" id="camNote">書類が枠に入って、スマホが止まり、ピントが合うと自動で撮ります。シャッターボタンでも、押したときの揺れがおさまってから撮ります。ぶれていたら自動でもう一度撮るので、ぶれにくくなります（1枚に数秒かかることがあります）。続けて何枚でも撮れます。暗い所や細かい字は、スマホのカメラアプリのほうがきれいに撮れることもあります。</p>
         <input type="file" id="cam" accept="image/*" capture="environment" hidden>
       </div>
 
@@ -194,7 +194,7 @@
     </div>
     <div class="sh-top">
       <div class="sh-status" id="shStatus">カメラを準備しています…</div>
-      <div class="sh-note" id="shNote">止めて持つと自動で撮ります。画面をタップすると、そこにピントを合わせます（できる機種のみ）。</div>
+      <div class="sh-note" id="shNote">止めて持つと自動で撮ります。ぶれていたら、もう一度撮ります。</div>
     </div>
   </div>
   <div class="sh-bar">
@@ -312,6 +312,19 @@ function blurAtStd(it) {
   const [ow, oh] = Scan.outputSize(q, Scan.paperAspect(q, it.w, it.h));
   return it.blur * Math.min(1, QUALITY.std.max / Math.max(ow, oh));
 }
+// カメラで撮った写真のぼやけ（blurAtStd と同じ大きさ）。カメラが「ぶれていたら、もう一度撮る」のに使う
+async function rateShot(file) {
+  const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  try {
+    const w = bmp.width, h = bmp.height, s = Math.min(1, 480 / Math.max(w, h));
+    const det = downscale(bmp, Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s)));
+    const r = Scan.detectDocument(det.getContext('2d').getImageData(0, 0, det.width, det.height));
+    const quad = r.quad.map(([x, y]) => [x / det.width, y / det.height]);
+    det.width = det.height = 0;
+    const b = measurePhotoBlur(bmp, quad);
+    return b.ok ? blurAtStd({ blur: b.blur, quad, w, h }) : 0;
+  } finally { bmp.close(); }
+}
 
 /* ---------- 写真の一覧 ---------- */
 // 読み込んだら書類のふちを自動で探し、カードには補正後の姿を出す
@@ -399,6 +412,7 @@ function openShooter(replaceIt) {
   if (!CAN_SHOOT) { $('#cam').click(); return; }
   ScanCam.open({
     single: !!replaceIt,
+    rate: rateShot, warn: BLUR_WARN,
     onShot: file => (replaceIt && list.items.includes(replaceIt) ? list.replace(replaceIt, file) : list.add([file])),
   });
 }
@@ -428,8 +442,8 @@ const form = $('#settings'), SETTINGS_KEY = 'scan-settings-v1';
 form.elements.save.value = matchMedia('(pointer:coarse)').matches ? 'each' : 'zip';
 const MODE_NOTE = {
   color: '影と色かぶりを消して、紙を白く・文字をくっきり。ペンの色は残ります。',
-  gray: '白から黒の濃淡だけで。色がいらない書類やノートに。',
-  bw: '白と黒の2色。文字だけの書類は、いちばんくっきり・小さくなります。',
+  gray: '白から黒の濃淡だけで。影を消して、鉛筆のうすい字も見やすく。色がいらない書類やノートに。',
+  bw: '白と黒の2色。文字だけの書類は、いちばんくっきり・小さくなります。表のマス目やノートの罫線も黒い線になります。灰色の塗りや鉛筆の濃淡は残りにくいので、そういう書類はグレーがおすすめです。',
   none: 'まっすぐにするだけ（色や明るさはそのまま）。写真や図に。',
 };
 function updateSettingsUi() {
