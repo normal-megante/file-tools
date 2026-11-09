@@ -62,7 +62,10 @@
 .plab .hid{color:var(--warn);margin-left:8px}
 .pg{position:relative;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25);overflow:hidden;width:100%}
 .pg > canvas{display:block;width:100%;height:100%}
-.pg > .pp-slide{position:absolute;left:0;top:0}
+.pg > .pp-slide,.pg > .dx-page{position:absolute;left:0;top:0}
+/* Word のスマホ向け表示（紙のように白地に黒） */
+.docflow{background:#fff;color:#000;padding:16px;border-radius:8px;max-width:860px;margin:0 auto;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+@media (max-width:560px){.docflow{padding:12px 10px}}
 .pg .perr{position:absolute;inset:0;display:grid;place-items:center;color:#5b6474;font-size:13px;padding:8px;text-align:center}
 .pnotes{margin-top:6px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;white-space:pre-wrap;word-break:break-word}
 .pnotes::before{content:"ノート";display:block;font-size:11px;color:var(--muted);font-weight:600}
@@ -107,7 +110,7 @@
   <header>
     <a class="back" href="./">← ツール箱にもどる</a>
     <h1>ファイルを見る</h1>
-    <p>PDF・PowerPoint・画像・文章・動画・音声・ZIP の中身を表示します。見るだけの道具で、ファイルはこの端末の中だけで使われ、どこにも送られません。</p>
+    <p>PDF・Word・PowerPoint・画像・文章・動画・音声・ZIP の中身を表示します。見るだけの道具で、ファイルはこの端末の中だけで使われ、どこにも送られません。</p>
   </header>
 
   <div id="drop" class="drop compact" tabindex="0" role="button" aria-label="ファイルを選ぶ">
@@ -122,7 +125,8 @@
     <ul>
       <li><span class="k"><b>PDF</b></span><span class="c">ページを順に表示。パスワードつきも開けます。<em>文字を選んでコピーすることはできません（ページを絵として表示）。</em></span></li>
       <li><span class="k"><b>PowerPoint</b><small>.pptx（.ppsx・.pptm も）</small></span><span class="c">スライドとノート。<em>書体はこの端末にあるもので代わりに表示するので、文字の大きさや改行の位置が元と少し違うことがあります。グラフ・アニメーション・動画は表示されません（グラフは枠と名前だけ）。</em></span></li>
-      <li><span class="k"><b>Word・Excel</b><small>.docx・.xlsx</small></span><span class="c"><em>準備中です（このあと作ります）。</em></span></li>
+      <li><span class="k"><b>Word</b><small>.docx（.docm も）</small></span><span class="c">「ページ」は紙と同じページに分けて表示、「スマホ向け」は画面の幅で折り返して読みやすく（表は横にスクロール）。<em>書体はこの端末にあるもので代わりに表示するので、改行やページの切れ目が元と少し違うことがあります。段組みは1段・縦書きは横書きで表示。グラフ・SmartArt・EMF の図は枠だけ、コメントと変更履歴の印は出ません。</em></span></li>
+      <li><span class="k"><b>Excel</b><small>.xlsx</small></span><span class="c"><em>準備中です（このあと作ります）。</em></span></li>
       <li><span class="k"><b>画像</b><small>JPEG・PNG・WebP・GIF・BMP・SVG・AVIF</small></span><span class="c">画像をタップすると、原寸と画面に合わせた大きさを切りかえ。<em>HEIC（iPhone の写真）は、この端末が対応していないと表示できません。</em></span></li>
       <li><span class="k"><b>文章</b><small>.txt・.csv・.json・.md・.log など</small></span><span class="c">文字コード（UTF-8・シフト JIS など）は自動で見分けます。CSV は表、JSON は見やすく整えて表示。<em>とても大きなファイルは、はじめの 2 MB だけ表示します。</em></span></li>
       <li><span class="k"><b>動画・音声</b><small>MP4・WebM・MOV・MP3・M4A・WAV など</small></span><span class="c">そのまま再生。<em>この端末が再生できない形式（AVI・WMV など）は再生できません。</em></span></li>
@@ -145,7 +149,9 @@
 <script src="js/common.js"></script>
 <script src="js/pdfview.js"></script>
 <script src="js/zip.js"></script>
+<script src="js/drawingml.js"></script>
 <script src="js/pptx.js"></script>
+<script src="js/docx.js"></script>
 <script>
 'use strict';
 /* =========================================================
@@ -603,12 +609,90 @@ async function viewPptx(file, v, zip) {
   v.note('書体はこの端末にあるもので代わりに表示しています。文字の大きさや改行の位置が元と少し違うことがあります。グラフ・アニメーション・動画は表示されません。', true);
 }
 
+/* ---------- Word ----------
+   「ページ」：紙と同じページに分けて表示（PC 向け）。「スマホ向け」：画面の幅で折り返す。選んだ方を覚えておく */
+const DOCX_MODE_KEY = 'file-tools.view.docxMode';
+async function viewDocx(file, v, zip) {
+  const doc = await Docx.open(zip);
+  v.onDispose(() => doc.dispose());
+  if (!v.alive()) return;
+  const inf = doc.info;
+  let mode = null;
+  try { mode = localStorage.getItem(DOCX_MODE_KEY); } catch (e) { /* 使えないときは覚えない */ }
+  if (mode !== 'page' && mode !== 'flow') mode = window.innerWidth < 700 ? 'flow' : 'page';
+  const seg = h('div', 'seg'), mt = h('span', 'vtools');
+  seg.setAttribute('role', 'radiogroup');
+  const radios = {};
+  for (const [k, label, tip] of [['page', 'ページ', '紙と同じページに分けて表示'], ['flow', 'スマホ向け', '画面の幅に合わせて折り返す（ページには分けない）']]) {
+    const lab = h('label'), r = h('input');
+    r.type = 'radio'; r.name = 'docxmode'; r.value = k; r.checked = k === mode;
+    r.addEventListener('change', () => { if (r.checked) { try { localStorage.setItem(DOCX_MODE_KEY, k); } catch (e) { /* なし */ } run(k); } });
+    lab.title = tip;
+    lab.append(r, document.createTextNode(label));
+    seg.appendChild(lab);
+    radios[k] = r;
+  }
+  v.tools.append(seg, mt);
+  const extra = [inf.cols && '段組みは1段で', inf.vert && '縦書きは横書きで', inf.comments && 'コメントは出さずに'].filter(Boolean);
+  const extraText = extra.length ? `${extra.join('、')}表示しています。` : '';
+  let sub = null;
+  async function run(k) {
+    if (sub) { sub.dead = true; for (const f of sub.disposers.splice(0)) { try { f(); } catch (e) { console.warn(e); } } }
+    const me = sub = { ...v, tools: mt, dead: false, disposers: [], alive: () => v.alive() && !me.dead, onDispose(f) { if (me.dead) f(); else me.disposers.push(f); } };
+    v.onDispose(() => { me.dead = true; for (const f of me.disposers.splice(0)) { try { f(); } catch (e) { console.warn(e); } } });
+    mt.replaceChildren();
+    v.stack = null;
+    const w = waiting(k === 'page' ? 'ページに分けています…' : '表示を作っています…');
+    v.body.replaceChildren(w);
+    v.flat(k === 'flow');
+    if (k === 'page') {
+      const pages = await doc.paginate({ alive: me.alive, progress: t => { w.lastChild.textContent = t; } });
+      if (!pages || !me.alive()) return;
+      v.info(`Word・${pages.length} ページ・${inf.paper}${inf.sections > 1 ? ' など' : ''}・${fmtSize(file.size)}`);
+      const stack = new PageStack(me, {
+        count: pages.length,
+        aspect: i => pages[i].h / pages[i].w,
+        label: i => `${i + 1} / ${pages.length}`,
+        render: (it, wd) => { const p = pages[it.i]; p.el.style.transform = `scale(${wd / p.w})`; return p.el; },
+        rescale: (it, wd) => { it.node.style.transform = `scale(${wd / pages[it.i].w})`; },
+      });
+      v.stack = stack;
+      pageTools(me, stack, pages.length, 'ページ');
+      v.note(`書体はこの端末にあるもので代わりに表示しています。文字の幅や改行・ページの切れ目が元と少し違うことがあります。${extraText}グラフ・SmartArt・EMF の図は枠だけです。`, true);
+    } else {
+      const host = $('#vbody'), cs = getComputedStyle(host);
+      const avail = () => Math.max(200, host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 32);
+      let width = avail();
+      const draw = async () => {
+        const el = await doc.flow(width);
+        if (!me.alive()) return;
+        const wrap = h('div', 'docflow');
+        wrap.appendChild(el);
+        v.body.replaceChildren(wrap);
+        Docx.layoutTabs(el);
+      };
+      await draw();
+      if (!me.alive()) return;
+      v.info(`Word・${inf.paper}・${fmtSize(file.size)}`);
+      v.note(`スマホの画面に合わせて折り返しています。ページの切れ目・ヘッダー・フッターは出ません（紙と同じ形は「ページ」で）。${extraText}`, false);
+      let timer = 0;
+      const ro = new ResizeObserver(() => {
+        clearTimeout(timer);
+        timer = setTimeout(() => { const nw = avail(); if (me.alive() && Math.abs(nw - width) > 30) { width = nw; draw(); } }, 250);
+      });
+      ro.observe(host);
+      me.onDispose(() => { ro.disconnect(); clearTimeout(timer); });
+    }
+  }
+  await run(mode);
+}
+
 /* ---------- ZIP（Word・Excel・PowerPoint も中身は ZIP） ---------- */
 async function viewZipLike(file, v) {
   const zip = await Zip.open(file);
   if (!v.alive()) return;
   if (zip.get('ppt/presentation.xml')) return viewPptx(file, v, zip);
-  if (zip.get('word/document.xml')) return message(v, 'Word のファイルの表示は準備中です', 'このあと作ります（.docx）。', zipButton(file, v, zip));
+  if (zip.get('word/document.xml')) return viewDocx(file, v, zip);
   if (zip.get('xl/workbook.xml')) return message(v, 'Excel のファイルの表示は準備中です', 'このあと作ります（.xlsx）。', zipButton(file, v, zip));
   return viewZip(file, v, zip);
 }

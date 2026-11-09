@@ -10,7 +10,7 @@
 // ※ ツールのファイルを新しく足したら、下の PRECACHE にも書き足してください。
 // =========================================================
 
-const CACHE = 'file-tools-v13';   // しまっておく入れ物の名前
+const CACHE = 'file-tools-v14';   // しまっておく入れ物の名前
 const SHARE_INBOX = 'share-inbox'; // スマホの「共有」で届いたファイルを、ページが受け取るまで一時的に置く所（古い入れ物の片付けでは消さない）
 const NETWORK_TIMEOUT = 4000;    // ネットの返事をこれだけ（ミリ秒）待ち、来なければしまってある分を使う
 
@@ -45,7 +45,9 @@ const PRECACHE = [
   'js/scancam.js',
   'js/gif.js',
   'js/zip.js',
+  'js/drawingml.js',
   'js/pptx.js',
+  'js/docx.js',
   // PDF の表示部品（日本語の文字表などは、使ったときにしまう）
   'vendor/pdfjs/pdf.min.mjs',
   'vendor/pdfjs/pdf.worker.min.mjs',
