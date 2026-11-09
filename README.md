@@ -3,6 +3,7 @@
 画像・PDF・動画・音声の「ちょっとした作業」をまとめた、自分用のツール集です。
 無料・回数無制限で、PC でもスマホでも使えます。
 
+- **ファイルを見る**：PDF・PowerPoint（.pptx）・画像・文章（CSV は表で）・動画・音声・ZIP の中身を表示。スマホの「共有」からも開ける。広告なし（PowerPoint は自作の表示部品で描くので、書体や改行の位置が元と少し違うことがあり、グラフ・アニメーションは出ません。Word・Excel は準備中）
 - **画像 → PDF**：JPEG / PNG / WebP などを1つの PDF に（用紙・余白・向き・画質・白黒を選べる）
 - **画像の変換・圧縮**：JPEG / PNG / WebP の変換、画質、ファイルサイズの上限、縮小、回転・反転・切り抜き
 - **QR コード作成**：URL・文章、Wi-Fi、連絡先。PNG / SVG で保存
@@ -28,7 +29,7 @@ HTML / CSS / JavaScript だけで作っています（ビルド作業なし）�
 
 ## 使わせてもらっている部品
 
-- [pdf.js](https://mozilla.github.io/pdf.js/)（Mozilla）… PDF のページの表示と画像化。Apache License 2.0。`vendor/pdfjs/` に同梱（ライセンス文も同じ場所）
+- [pdf.js](https://mozilla.github.io/pdf.js/)（Mozilla）… PDF のページの表示と画像化（「ファイルを見る」の PDF の表示でも使う）。Apache License 2.0。`vendor/pdfjs/` に同梱（ライセンス文も同じ場所）
 - [Mediabunny](https://mediabunny.dev/)（Vanilagy and contributors）… 動画・音声の読み書きと変換（GIF アニメの、動画からコマを取り出す所でも使う）。Mozilla Public License 2.0。`vendor/mediabunny/` に同梱（ライセンス文も同じ場所。中身は書き換えていません）
   - MP3 を作る部分に [LAME](https://lame.sourceforge.io/)（GNU LGPL）を使っています（Mediabunny の MP3 部品の中に入っているもの）
   - FLAC を作る部分に [libFLAC](https://xiph.org/flac/)（Xiph.Org、BSD ライセンス）を使っています（Mediabunny の FLAC 部品の中に入っているもの）

@@ -10,8 +10,8 @@
 // ※ ツールのファイルを新しく足したら、下の PRECACHE にも書き足してください。
 // =========================================================
 
-const CACHE = 'file-tools-v12';   // しまっておく入れ物の名前
-const SHARE_INBOX = 'share-inbox'; // スマホの「共有」で届いた画像を、ページが受け取るまで一時的に置く所（古い入れ物の片付けでは消さない）
+const CACHE = 'file-tools-v13';   // しまっておく入れ物の名前
+const SHARE_INBOX = 'share-inbox'; // スマホの「共有」で届いたファイルを、ページが受け取るまで一時的に置く所（古い入れ物の片付けでは消さない）
 const NETWORK_TIMEOUT = 4000;    // ネットの返事をこれだけ（ミリ秒）待ち、来なければしまってある分を使う
 
 // 最初にまとめてしまっておくファイル
@@ -29,6 +29,7 @@ const PRECACHE = [
   'pdf-write.html',
   'media.html',
   'gif.html',
+  'view.html',
   'manifest.webmanifest',
   'css/common.css',
   'js/common.js',
@@ -43,6 +44,8 @@ const PRECACHE = [
   'js/scan.js',
   'js/scancam.js',
   'js/gif.js',
+  'js/zip.js',
+  'js/pptx.js',
   // PDF の表示部品（日本語の文字表などは、使ったときにしまう）
   'vendor/pdfjs/pdf.min.mjs',
   'vendor/pdfjs/pdf.worker.min.mjs',
@@ -80,9 +83,10 @@ self.addEventListener('activate', (event) => {
 // ---- ファイルを読み込むたびに ----
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  // スマホの「共有」→「ツール箱」で画像が届いたとき（manifest の share_target）。
-  // 画像をしまってから、QR コード読み取りのページを開き直す（ページがしまった画像を読む）
-  if (request.method === 'POST' && new URL(request.url).pathname.endsWith('/qr-read.html')) {
+  // スマホの「共有」→「ツール箱」でファイルが届いたとき（manifest の share_target）。
+  // ファイルをしまってから、画像だけなら QR コード読み取り、それ以外は「ファイルを見る」のページを開き直す（ページがしまったファイルを読む）。
+  // 古い manifest のままの端末は qr-read.html に送ってくるので、そちらも受ける
+  if (request.method === 'POST' && /\/(qr-read|view)\.html$/.test(new URL(request.url).pathname)) {
     event.respondWith(receiveShare(request));
     return;
   }
@@ -137,22 +141,27 @@ async function findInCache(key, isPage) {
     ?? cache.match(`${self.registration.scope}index.html`, options);
 }
 
+const IMAGE_NAME = /\.(jpe?g|jfif|png|webp|gif|bmp|avif|heic|heif)$/i;
+
 async function receiveShare(request) {
+  let page = new URL(request.url).pathname.endsWith('/qr-read.html') ? 'qr-read.html' : 'view.html';
   try {
     const form = await request.formData();
-    const files = form.getAll('image').filter((f) => typeof f === 'object' && f.size > 0).slice(0, 20);
+    const files = [...form.getAll('file'), ...form.getAll('image')].filter((f) => typeof f === 'object' && f.size > 0).slice(0, 20);
     const cache = await caches.open(SHARE_INBOX);
     for (const old of await cache.keys()) await cache.delete(old); // 前の残りは消す
     let n = 0;
     for (const f of files) {
       await cache.put(new Request(`${self.registration.scope}__shared/${n++}`), new Response(f, {
-        headers: { 'Content-Type': f.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(f.name || '共有された画像') },
+        headers: { 'Content-Type': f.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(f.name || '共有されたファイル') },
       }));
     }
+    // 画像だけなら、これまでどおり QR コード読み取りへ（スクショの QR を読むのに使う）
+    if (files.length) page = files.every((f) => (f.type || '').startsWith('image/') || IMAGE_NAME.test(f.name || '')) ? 'qr-read.html' : 'view.html';
   } catch {
     // 受け取れなくても、ページは開く（ページが「受け取れませんでした」と出す）
   }
-  return Response.redirect(`${self.registration.scope}qr-read.html?shared`, 303);
+  return Response.redirect(`${self.registration.scope}${page}?shared`, 303);
 }
 
 function wait(ms) {

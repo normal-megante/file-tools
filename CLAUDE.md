@@ -40,6 +40,9 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 | `pdf-write.html` | PDF に書き込み（文字・日付・✓○×・白塗り・手書き・ハンコ／サイン。選んで移動・大きさ変更・削除・元に戻す、表示の拡大。道具ごとに注意書き）。ハンコ・サインは「選ぶ・作る」の窓（保存したもの／印鑑を作る／サインを書く／画像から） |
 | `media.html` | 動画・音声の変換（動画：MP4 / WebM、音声：MP3 / M4A / WAV / FLAC / OGG。大きさ・画質・ファイルサイズの上限・30コマ・音を消す、音質・モノラル、ファイルごとの切り取り・回転。いくつでも） |
 | `gif.html` | GIF アニメを作る（動画の一部から：使う所・大きさ・なめらかさ・速さ／画像から：並べ替え・回転・1枚の時間・余白か切り取り。画質3段階、くり返し、コマ数と大きさの目安、できたものを見てから保存） |
+| `view.html` | ファイルを見る（PDF・PowerPoint・画像・文章（CSV は表、JSON は整えて）・動画・音声・ZIP の中身。種類は中身の頭で見分ける。いくつでも開いてタブで切りかえ、拡大縮小・全画面、スマホの「共有」から。Word・Excel は準備中） |
+| `js/zip.js` | ZIP を読む（自作。`Zip.open(blob)` → `entries`・`get(name)`・`bytes` / `text` / `blob(entry)`。一覧だけ先に読み、1つずつ取り出す。シフト JIS の名前・ZIP64 も）。Node でもテストできる |
+| `js/pptx.js` | PowerPoint（.pptx）を見る（自作。`Pptx.open(zip)` → `width` / `height` / `count`、`slide(i)` → `{ el, notes, hidden }`、`dispose()`）。`js/zip.js` を先に読む |
 | `css/common.css` | 全ページ共通の見た目 |
 | `js/common.js` | 共通の部品（ファイル受け取り、画像一覧 `ImageList`、縮小 `downscale`、ZIP 作成、保存・共有など） |
 | `js/pdf.js` | PDF 作成の共通部品（`buildPdf`、JPEG そのまま埋め込み、Flate 圧縮、白黒 1 ビット `bitonalFromCanvas`、用紙の配置） |
@@ -55,7 +58,7 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 | `vendor/mediabunny/` | Mediabunny 1.62.1 と MP3・FLAC の部品（動画・音声の読み書き。中身は書き換えない。ライセンス文と説明は中の README.md） |
 | `js/qrcode.js` | QR コードの作成（自作。Node でもテストできる形）。規格の表（`QR.spec`）は読み取りでも使う |
 | `js/qrread.js` | QR コードの読み取り（自作。`QRRead.scan(imageData)` → `[{ text, corners, version, ecl, sa }]`。`js/qrcode.js` を先に読む。Node でもテストできる） |
-| `manifest.webmanifest` / `sw.js` / `icons/` | アプリ化（PWA）。`sw.js` は「ネット優先・つながらなければ保存分」。スマホの「共有」で届いた画像（`share_target`）も `sw.js` が受け取る |
+| `manifest.webmanifest` / `sw.js` / `icons/` | アプリ化（PWA）。`sw.js` は「ネット優先・つながらなければ保存分」。スマホの「共有」で届いたファイル（`share_target`）も `sw.js` が受け取り、画像だけなら QR コード読み取り、それ以外は「ファイルを見る」へ |
 | `dev-server.py` | PC で確かめるための簡易サーバー（`python dev-server.py` → http://localhost:8140） |
 
 ## 作り方のメモ（ハマりどころ）
@@ -137,6 +140,26 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 - 大きさの目安：画素数 × コマ数 × bpp（きれい 0.55・ふつう 0.45・軽い 0.33。画面全体がざらざら動く動画で測った、多めの値）。少ないほうは、その 0.15 倍。10MB をこえそうなら注意。
 - できたら、その場で動きを見せて「保存する」で保存（ほかのページと違い、すぐには保存しない。設定を変えて作り直すことが多いため）。
 - テスト（作業用フォルダ）：Node で合成のアニメ（動画風・画面の録画風・スライド）を作り、Python（PIL）で読んで、コマ数・長さ・くり返し・元との色の差を確かめた。ブラウザでは Mediabunny で作ったテスト動画（回転つき・長い・音だけ・こわれたもの）と画像（形のちがうもの・透明つき・回転）で作り、`ImageDecoder` で読み直して、時間・大きさ・向き・余白・元のコマとの差（時刻が合っていること）を確かめた。
+
+### ファイルを見る（`view.html`・`js/zip.js`・`js/pptx.js`）
+
+- 見るだけの道具。新しい部品は足していない（PDF はもとからある pdf.js、ZIP と PowerPoint は自作）。Android の Chrome は「このアプリで開く」の一覧に入る仕組み（File Handling）がない（2026-02 時点）ので、スマホでは「共有」から開く。
+- 種類は中身の頭（マジックバイト）で見分け、分からなければ拡張子と MIME（`sniff`）。Office の新しい形式は中身が ZIP なので、ZIP を開いて `ppt/presentation.xml`・`word/document.xml`・`xl/workbook.xml` があるかで見分ける。`D0 CF 11 E0`（古い Office の入れ物）は、古い形式か、パスワードつきの新しい形式（中に `EncryptedPackage` がある。拡張子が .pptx などのときも）。
+- ZIP（`js/zip.js`）：うしろの「終わりの印」から中身の一覧だけを先に読み、1つずつ `Blob.slice` で取り出して `DecompressionStream('deflate-raw')` で伸ばす。名前は UTF-8 の印 → UTF-8 として読めるか → シフト JIS（日本の Windows で作った ZIP）。ZIP64 も。パスワードつき・deflate 以外の圧縮は開けない。中のファイルは新しいタブで開く（入れ子の ZIP も）・1つずつ保存。
+- PDF とスライドは縦に並べ、見えている所の前後（1500px）だけ描く。遠くへ行ったら片付ける（スマホのメモリのため。`PageStack`）。幅に合わせた大きさを 100% として 50〜300%、全画面（全画面の中ではその中のスクロールで見張る）。PDF は文字を選べない（絵として表示。画面に注意書き）。
+- PowerPoint（`js/pptx.js`）：
+  - スライド → レイアウト → マスター → テーマの順に、プレースホルダー（idx・type で対応）の位置・文字の書式・箇条書きを引き継ぐ。文字の書式は defaultTextStyle → マスターの txStyles（title / body / other）→ マスター・レイアウトの lstStyle → 図形の style の fontRef → 図形の lstStyle → 段落 → 文字、の順に重ねる。
+  - 色：テーマの色＋clrMap（マスター、レイアウト・スライドで上書き）。tint・shade は PowerPoint と同じく光の量（リニア）で混ぜる（sRGB のまま混ぜると暗くなる。PowerPoint の書き出しと比べて分かった）。lumMod などは HSL。
+  - 図形は SVG（決まった形 prstGeom の主なものと自由な形 custGeom、線の矢印・点線）、文字は HTML。決まった形の「文字を置く四角」（楕円・三角・星・矢印など）も PowerPoint に合わせた（`presetTextRect`。合わせないと白い文字が図形の外に出て見えなくなる）。
+  - 背景：スライド → レイアウト → マスター。テーマの背景の画像（bgRef の 1001〜）は、テーマのファイルからの場所で探す。2色の色づけ（duotone）は canvas で作る。
+  - 表：tableStyles.xml の定義。なければ PowerPoint の標準「中間スタイル 2 - アクセント 1」に近いもの。結合セル。
+  - SmartArt は PowerPoint が一緒に保存している描画（drawingN.xml）を図形として描く。グラフは枠と題名だけ（Excel の画面を作るときに、共通のグラフの部品を作る予定）。EMF・WMF・TIFF の図は枠と説明だけ。影・3D などの効果、アニメーションはなし。
+  - 書体はその端末のもの（Wingdings の記号はふつうの記号に置きかえ）。そのため文字の幅や改行の位置が元と少し違うことがある（画面にも注意書き）。
+  - スライドは EMU ÷ 9525 = px（96 dpi）の大きさで作り、`transform: scale` で縮める（ピンチで拡大しても文字はくっきり）。
+- 文章：BOM → UTF-8（fatal）→ シフト JIS → EUC-JP の順に試す。2 MB まで。CSV は表（5000 行まで。"" の中の , や改行も）、JSON は整えて。種類の分からないファイルも、文字だけなら文章として見せる。
+- 画像は `<img>`（HEIC・TIFF は端末しだい。表示できなければそう出す）、動画・音声は `<video>` / `<audio>`（再生できなければそう出す）。
+- 共有：manifest の share_target を `view.html`（files の名前 `file`、受け取る種類を広げた）にした。`sw.js` は `view.html` と `qr-read.html`（古い manifest のままの端末から）への POST を受け、届いたものが画像だけなら QR コード読み取り、それ以外は「ファイルを見る」を開く。インストールしたアプリの manifest はすぐには新しくならない（数日かかることがある。入れ直せばすぐ）。
+- テスト（作業用フォルダ）：python-pptx で作った pptx と、この PC の PowerPoint を自動で動かして作った pptx（テーマ Facet・Ion・Organic、ワードアート・表・画像）を、PowerPoint の書き出し（PNG）と並べて見比べた（ブラウザ側はスライドを SVG の foreignObject で画像にして送った）。ほかに、シフト JIS の名前の ZIP（入れ子の ZIP・PowerPoint・PDF 入り）、パスワードつき PDF（違うパスワード → 正しいパスワード）、古い形式・パスワードつきの Office、HEIC のふり、CSV（シフト JIS・"" の中の改行）、2 MB をこえる文章、拡張子のない文章、中身のないファイル、WAV、共有（ふつう・画像だけ・古い manifest の 3 通り）、スマホ幅。PowerPoint を自動で動かすときは、ユーザーが開いていないことを先に確かめる（`Quit` でユーザーの作業まで閉じないように）。SmartArt は PowerPoint の画面を出さないと作れなかったので、まだ試していない。
 
 ### QR コード読み取り（`js/qrread.js` と `qr-read.html`）
 
@@ -257,9 +280,17 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
    - 画質 3 段階（きれい・ふつう・軽い）、くり返し（ずっと・1回だけ）、コマ数と大きさの目安（多すぎ・大きすぎの注意）、できたものをその場で見て保存・共有。注意書き（256 色まで・ファイルが大きくなる・音は入らない・動く GIF は最初の1コマ）はそれぞれのそばに。
    - 確認済み：上のテスト。PC で 480×270・4 秒が約 1.7 秒、800×450 は 1 秒に約 12 コマ。スマホ幅で横にはみ出さない。
    - 未確認：実機のスマホでの速さ、iPhone の動画（HEVC）が読めるか（端末しだい。読めないときはそう出る）。
-7. ⬜ **変換（PC のみ）**：Web ページ → PDF、Office → PDF、PDF → Word など（Python ツール）。
+7. ⬜ **変換（PC のみ）**：Web ページ → PDF、Office → PDF、PDF → Word など（Python ツール）。PDF24 Creator が PC に入っているので、作らないかもしれない。
+8. **ファイルを見る**（スマホで pptx などを見たい、広告だらけのアプリの代わりに。3 段階で作る）
+   1. ✅ **① 土台＋PowerPoint**（2026-11-10）：`view.html`、`js/zip.js`、`js/pptx.js`（自作。新しい部品は足していない）。
+      - PDF・PowerPoint（スライドとノート、非表示のスライドの印）・画像・文章（CSV・JSON）・動画・音声・ZIP（中を開く・取り出して保存）。古い形式・パスワードつきの Office は、そう出す。
+      - いくつでも開いてタブで切りかえ、拡大縮小・全画面、「共有」でほかのアプリへ、スマホの「共有」から開ける。見られるファイルとできないことは、一覧にそれぞれ注意書き。
+      - 確認済み：上のテスト。
+      - 未確認：実機のスマホ（「共有」から開く・ピンチで拡大・全画面・速さ）、ユーザーの本物の pptx（SmartArt などを含むもの。見せてよいものをもらえたら試す）。
+   2. ⬜ **② Word（.docx）**
+   3. ⬜ **③ Excel（.xlsx）**：グラフの部品も作り、PowerPoint のグラフにも使う。
 
 ## 公開
 
-- まだ未公開。公開するなら GitHub Pages（例：`normal-megante.github.io/file-tools/`）。
-- 公開すればスマホからも開けて、「ホーム画面に追加」でアプリのように使える。
+- GitHub Pages で公開ずみ（`normal-megante.github.io/file-tools/`）。スマホにもインストールしてある。
+- 更新：Claude がコミットまで、ユーザーが GitHub Desktop で push。

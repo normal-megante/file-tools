@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ファイルを見る｜ファイルツール箱</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/common.css">
+<style>
+.vw{max-width:1040px}
+/* 見られるファイルの一覧（それぞれの注意つき） */
+.kinds{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:2px 14px;box-shadow:var(--shadow)}
+.kinds summary{cursor:pointer;font-weight:600;padding:8px 0}
+.kinds ul{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px}
+.kinds li{display:grid;grid-template-columns:minmax(0,14em) minmax(0,1fr);gap:0 12px;border-top:1px solid var(--line);padding-top:6px}
+@media (max-width:560px){.kinds li{grid-template-columns:1fr}}
+.kinds .k b{font-weight:700}
+.kinds .k small{display:block;font-size:11.5px;color:var(--muted);line-height:1.4}
+.kinds .c{font-size:12.5px;color:var(--muted);line-height:1.5}
+.kinds .c em{font-style:normal;color:var(--warn)}
+.kinds .no .k b{color:var(--muted)}
+/* 開いたファイルの切りかえ */
+.tabs{display:flex;gap:6px;overflow-x:auto;margin:14px 0 8px;padding:2px 0 4px}
+.tab{flex:none;display:flex;align-items:center;gap:2px;border:1px solid var(--line-strong);background:var(--panel);border-radius:99px;padding:1px 2px 1px 12px;max-width:260px;cursor:pointer;font-size:13px}
+.tab.on{border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+.tab .tn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab .x{border:0;background:transparent;width:26px;height:26px;border-radius:50%;cursor:pointer;color:var(--muted);display:grid;place-items:center;flex:none}
+.tab .x:hover{background:var(--danger-soft);color:var(--danger)}
+/* 表示する所 */
+.viewer{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.tabs:not([hidden]) + .viewer{margin-top:0}
+.vhead{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;padding:8px 10px 8px 14px;border-bottom:1px solid var(--line)}
+.vtitle{flex:1 1 14em;min-width:0}
+.vname{font-weight:700;word-break:break-all;line-height:1.4}
+.vinfo{font-size:12px;color:var(--muted)}
+.vtools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.vtools .btn{padding:4px 10px}
+.zoom{display:flex;align-items:center;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden}
+.zoom button{border:0;background:var(--panel);width:32px;height:30px;cursor:pointer;font-size:17px;line-height:1}
+.zoom button:hover:not(:disabled){color:var(--accent)}
+.zoom button:disabled{opacity:.35;cursor:default}
+.zoom output{min-width:3.6em;text-align:center;font-size:12px;font-variant-numeric:tabular-nums;border-left:1px solid var(--line);border-right:1px solid var(--line);line-height:30px}
+.pos{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.chk{display:inline-flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;border:1px solid var(--line-strong);border-radius:8px;padding:4px 10px}
+.chk input{accent-color:var(--accent);margin:0}
+.vtools .seg label{padding:4px 10px;flex:none}
+.vnote{margin:0;padding:6px 14px;font-size:12px;color:var(--muted);background:var(--thumb-bg);border-bottom:1px solid var(--line)}
+.vnote.warn{color:var(--warn);background:var(--warn-soft)}
+.vbody{background:var(--thumb-bg);padding:12px;overflow:auto;min-height:160px}
+.vbody.flat{background:var(--panel)}
+@media (max-width:560px){.vw{padding-left:10px;padding-right:10px}.vbody{padding:6px}.pages{gap:10px}}
+.msg{padding:36px 16px;text-align:center;color:var(--muted)}
+.msg b{display:block;color:var(--text);font-size:15px;margin-bottom:4px}
+.msg .btn{margin-top:12px}
+.wait{display:flex;align-items:center;justify-content:center;gap:10px;padding:40px;color:var(--muted)}
+/* ページ（PDF・スライド） */
+.pages{display:grid;gap:14px;margin:0 auto}
+.pitem{min-width:0}
+.plab{font-size:12px;color:var(--muted);margin:0 0 3px}
+.plab .hid{color:var(--warn);margin-left:8px}
+.pg{position:relative;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25);overflow:hidden;width:100%}
+.pg > canvas{display:block;width:100%;height:100%}
+.pg > .pp-slide{position:absolute;left:0;top:0}
+.pg .perr{position:absolute;inset:0;display:grid;place-items:center;color:#5b6474;font-size:13px;padding:8px;text-align:center}
+.pnotes{margin-top:6px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;white-space:pre-wrap;word-break:break-word}
+.pnotes::before{content:"ノート";display:block;font-size:11px;color:var(--muted);font-weight:600}
+.pages:not(.notes) .pnotes{display:none}
+/* 画像 */
+.imgbox{text-align:center}
+.imgbox img{max-width:100%;height:auto;background:repeating-conic-gradient(#e2e2e2 0 25%,#fff 0 50%) 0 0/16px 16px;cursor:zoom-in;vertical-align:top}
+.imgbox.full{text-align:left}
+.imgbox.full img{max-width:none;cursor:zoom-out}
+/* 動画・音声 */
+.media{display:flex;justify-content:center}
+.media video{max-width:100%;max-height:75vh;background:#000;border-radius:8px}
+.media audio{width:100%;max-width:600px;margin:30px 0}
+/* 文章 */
+.txt{margin:0;white-space:pre-wrap;word-break:break-word;font-size:14px;line-height:1.65;tab-size:4}
+.txt.mono{font-family:Consolas,"BIZ UDGothic","MS Gothic",monospace;font-size:13px;line-height:1.55}
+.txt.nowrap{white-space:pre;word-break:normal}
+.tblwrap{max-height:75vh;overflow:auto;border:1px solid var(--line-strong);background:var(--panel)}
+.csv{border-collapse:collapse;font-size:13px}
+.csv td,.csv th{border:1px solid var(--line);padding:3px 8px;vertical-align:top;white-space:pre-wrap;max-width:24em;overflow-wrap:anywhere;text-align:left}
+.csv thead th{background:var(--accent-soft);position:sticky;top:0;z-index:1}
+.csv .rn{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;background:var(--thumb-bg);font-weight:400}
+/* ZIP の中身 */
+.zlist{width:100%;border-collapse:collapse;font-size:13px}
+.zlist td{border-top:1px solid var(--line);padding:6px;vertical-align:middle}
+.zlist tr:first-child td{border-top:0}
+.zlist tr.open{cursor:pointer}
+.zlist tr.open:hover td{background:var(--accent-soft)}
+.zlist .zn{word-break:break-all}
+.zlist .zd{display:block;color:var(--muted);font-size:11.5px}
+.zlist .zs{white-space:nowrap;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.zlist .za{white-space:nowrap;text-align:right;width:1%}
+.zlist .za .btn{padding:2px 10px;font-size:12px}
+.zlist .lock{color:var(--muted);font-size:12px}
+/* 全画面 */
+.viewer:fullscreen{border-radius:0;border:0;display:flex;flex-direction:column;width:100vw;height:100vh}
+.viewer:fullscreen .vbody{flex:1;min-height:0}
+</style>
+</head>
+<body>
+<div class="wrap vw">
+  <header>
+    <a class="back" href="./">← ツール箱にもどる</a>
+    <h1>ファイルを見る</h1>
+    <p>PDF・PowerPoint・画像・文章・動画・音声・ZIP の中身を表示します。見るだけの道具で、ファイルはこの端末の中だけで使われ、どこにも送られません。</p>
+  </header>
+
+  <div id="drop" class="drop compact" tabindex="0" role="button" aria-label="ファイルを選ぶ">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M7 15s1.8-3 5-3 5 3 5 3-1.8 3-5 3-5-3-5-3z"/><circle cx="12" cy="15" r="1"/></svg>
+    <div class="big">ファイルを選ぶ<span class="pc-only">（ここにドラッグしても OK）</span></div>
+  </div>
+  <p class="hint touch-only" style="margin-top:6px">ほかのアプリ（ファイル・メール・ドライブなど）の「共有」から「ツール箱」を選んでも開けます。</p>
+  <input type="file" id="file" multiple hidden>
+
+  <details class="kinds" id="kinds" open>
+    <summary>見られるファイルと、できないこと</summary>
+    <ul>
+      <li><span class="k"><b>PDF</b></span><span class="c">ページを順に表示。パスワードつきも開けます。<em>文字を選んでコピーすることはできません（ページを絵として表示）。</em></span></li>
+      <li><span class="k"><b>PowerPoint</b><small>.pptx（.ppsx・.pptm も）</small></span><span class="c">スライドとノート。<em>書体はこの端末にあるもので代わりに表示するので、文字の大きさや改行の位置が元と少し違うことがあります。グラフ・アニメーション・動画は表示されません（グラフは枠と名前だけ）。</em></span></li>
+      <li><span class="k"><b>Word・Excel</b><small>.docx・.xlsx</small></span><span class="c"><em>準備中です（このあと作ります）。</em></span></li>
+      <li><span class="k"><b>画像</b><small>JPEG・PNG・WebP・GIF・BMP・SVG・AVIF</small></span><span class="c">画像をタップすると、原寸と画面に合わせた大きさを切りかえ。<em>HEIC（iPhone の写真）は、この端末が対応していないと表示できません。</em></span></li>
+      <li><span class="k"><b>文章</b><small>.txt・.csv・.json・.md・.log など</small></span><span class="c">文字コード（UTF-8・シフト JIS など）は自動で見分けます。CSV は表、JSON は見やすく整えて表示。<em>とても大きなファイルは、はじめの 2 MB だけ表示します。</em></span></li>
+      <li><span class="k"><b>動画・音声</b><small>MP4・WebM・MOV・MP3・M4A・WAV など</small></span><span class="c">そのまま再生。<em>この端末が再生できない形式（AVI・WMV など）は再生できません。</em></span></li>
+      <li><span class="k"><b>ZIP</b></span><span class="c">中のファイルの一覧。タップで中身を表示、1つずつ取り出して保存もできます。<em>パスワードつきの ZIP は開けません。</em></span></li>
+      <li class="no"><span class="k"><b>開けないもの</b></span><span class="c">古い形式の .doc・.xls・.ppt、パスワードで守られた Word・Excel・PowerPoint。書きかえ（編集）はできません。</span></li>
+    </ul>
+  </details>
+
+  <div class="tabs" id="tabs" role="tablist" hidden></div>
+  <section class="viewer" id="viewer" hidden>
+    <div class="vhead">
+      <div class="vtitle"><div class="vname" id="vname"></div><div class="vinfo" id="vinfo"></div></div>
+      <div id="vtools"></div>
+    </div>
+    <p class="vnote" id="vnote" hidden></p>
+    <div class="vbody" id="vbody"></div>
+  </section>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/pdfview.js"></script>
+<script src="js/zip.js"></script>
+<script src="js/pptx.js"></script>
+<script>
+'use strict';
+/* =========================================================
+   ファイルを見る：ファイルの種類を中身の頭から見分けて、それぞれの見せ方で表示する
+   ========================================================= */
+const MAX_TEXT = 2 * 1024 * 1024;     // 文章はここまで表示する
+const MAX_TABLE_ROWS = 5000;          // CSV の表はここまで
+const MAX_ZIP_LIST = 3000;            // ZIP の一覧はここまで
+const MAX_ZIP_OPEN = 300 * 1024 * 1024; // ZIP の中から開ける大きさ
+const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+
+const extOf = n => ((/\.([^./\\]+)$/.exec(n || '') || [])[1] || '').toLowerCase();
+const OLD_OFFICE = /^(doc|dot|xls|xlt|xla|ppt|pps|pot)$/;
+const OOXML = /^(docx|docm|dotx|dotm|xlsx|xlsm|xltx|xltm|xlsb|pptx|pptm|ppsx|ppsm|potx|potm)$/;
+const TEXT_EXT = /^(txt|text|csv|tsv|json|jsonl|ndjson|geojson|md|markdown|log|xml|html?|xhtml|css|js|mjs|cjs|ts|tsx|jsx|py|java|kt|c|cc|cpp|h|hpp|cs|rb|go|rs|php|swift|sh|bash|bat|cmd|ps1|ini|cfg|conf|yaml|yml|toml|sql|srt|vtt|ass|tex|bib|properties|env|gitignore|lrc|vcf|ics|rtf|svg|webmanifest|plist|gradle)$/;
+const PLAIN_EXT = /^(txt|text|md|markdown|srt|vtt|lrc|ass)$/; // ふつうの書体で見せるもの（ほかは等幅）
+const AUDIO_EXT = /^(mp3|m4a|aac|wav|flac|ogg|oga|opus|weba|amr|3ga|mid|midi|wma)$/;
+const VIDEO_EXT = /^(mp4|m4v|mov|webm|mkv|avi|3gp|3g2|ogv|wmv|flv|mts|m2ts)$/;
+const IMG_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', jfif: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml', avif: 'image/avif', heic: 'image/heic', heif: 'image/heif', tif: 'image/tiff', tiff: 'image/tiff', ico: 'image/x-icon' };
+const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const X_ICON = SVG('<path d="M18 6 6 18M6 6l12 12"/>', 15);
+
+/* ---------- 種類を見分ける（拡張子より中身の頭を信じる） ---------- */
+async function sniff(file) {
+  const b = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+  const ext = extOf(file.name), type = (file.type || '').toLowerCase();
+  const asc = (o, s) => { for (let i = 0; i < s.length; i++) if (b[o + i] !== s.charCodeAt(i)) return false; return b.length >= o + s.length; };
+  const head = String.fromCharCode(...b.subarray(0, 1024));
+  if (!file.size) return { kind: 'empty' };
+  if (head.includes('%PDF-')) return { kind: 'pdf' };
+  if (asc(0, 'PK\x03\x04') || asc(0, 'PK\x05\x06')) return { kind: 'zip' };
+  if (b[0] === 0xD0 && b[1] === 0xCF && b[2] === 0x11 && b[3] === 0xE0) return { kind: 'cfb' };
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return { kind: 'image', mime: 'image/jpeg' };
+  if (asc(0, '\x89PNG')) return { kind: 'image', mime: 'image/png' };
+  if (asc(0, 'GIF8')) return { kind: 'image', mime: 'image/gif' };
+  if (asc(0, 'RIFF') && asc(8, 'WEBP')) return { kind: 'image', mime: 'image/webp' };
+  if (asc(0, 'RIFF') && asc(8, 'WAVE')) return { kind: 'media', sub: 'audio' };
+  if (asc(0, 'RIFF') && asc(8, 'AVI ')) return { kind: 'media', sub: 'video' };
+  if (asc(0, 'BM') && b.length > 14 && (b[2] | b[3] << 8 | b[4] << 16 | b[5] << 24) >>> 0 === file.size) return { kind: 'image', mime: 'image/bmp' };
+  if (asc(0, 'II*\x00') || asc(0, 'MM\x00*')) return { kind: 'image', mime: 'image/tiff', sub: 'tiff' };
+  if (asc(4, 'ftyp')) {
+    const brand = String.fromCharCode(...b.subarray(8, 12));
+    if (/^(heic|heix|hevc|hevx|heim|heis|hevm|hevs|mif1|msf1)$/.test(brand)) return { kind: 'image', mime: 'image/heic', sub: 'heic' };
+    if (/^avi[fs]$/.test(brand)) return { kind: 'image', mime: 'image/avif' };
+    return { kind: 'media', sub: brand === 'M4A ' || brand === 'M4B ' || AUDIO_EXT.test(ext) || type.startsWith('audio/') ? 'audio' : 'video' };
+  }
+  if (b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) return { kind: 'media', sub: ext === 'weba' || type.startsWith('audio/') ? 'audio' : 'video' };
+  if (asc(0, 'OggS')) return { kind: 'media', sub: ext === 'ogv' || type.startsWith('video/') ? 'video' : 'audio' };
+  if (asc(0, 'fLaC') || asc(0, 'ID3') || asc(0, '#!AMR')) return { kind: 'media', sub: 'audio' };
+  if (b[0] === 0xFF && (b[1] & 0xE0) === 0xE0 && (AUDIO_EXT.test(ext) || type.startsWith('audio/') || !ext)) return { kind: 'media', sub: 'audio' };
+  if (b[0] === 0x47 && b[188] === 0x47 && /^(ts|mts|m2ts)$/.test(ext)) return { kind: 'media', sub: 'video' };
+  const lower = head.slice(0, 600).toLowerCase();
+  if (lower.includes('<svg') && (ext === 'svg' || !TEXT_EXT.test(ext))) return { kind: 'image', mime: 'image/svg+xml' };
+  // 中身の頭で分からないとき：拡張子・ファイルの種類の名前で
+  if (OLD_OFFICE.test(ext)) return { kind: 'cfb' };
+  if (OOXML.test(ext)) return { kind: 'broken', what: ext };
+  if (type.startsWith('image/') || IMG_MIME[ext]) return { kind: 'image', mime: IMG_MIME[ext] || type, sub: /^hei[cf]$/.test(ext) ? 'heic' : '' };
+  if (type.startsWith('video/') || VIDEO_EXT.test(ext)) return { kind: 'media', sub: 'video' };
+  if (type.startsWith('audio/') || AUDIO_EXT.test(ext)) return { kind: 'media', sub: 'audio' };
+  if (looksText(b) || (TEXT_EXT.test(ext) && !b.includes(0))) return { kind: 'text', guess: !TEXT_EXT.test(ext) && !type.startsWith('text/') };
+  return { kind: 'unknown' };
+}
+// 文字だけのファイルらしいか（0 の字がなく、UTF-8 かシフト JIS として読める。UTF-16 は頭の印で）
+function looksText(b) {
+  if ((b[0] === 0xFF && b[1] === 0xFE) || (b[0] === 0xFE && b[1] === 0xFF)) return true;
+  let ctl = 0;
+  for (const c of b) { if (c === 0) return false; if (c < 9 || (c > 13 && c < 32 && c !== 27)) ctl++; }
+  return ctl <= b.length * 0.02 && decodeText(b, true).ok;
+}
+
+/* ---------- 文字コード ---------- */
+// cut：途中で切ったデータ（最後の文字が欠けているかもしれない）
+function decodeText(b, cut) {
+  if (b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF) return { text: new TextDecoder('utf-8').decode(b.subarray(3)), enc: 'UTF-8', ok: true };
+  if (b[0] === 0xFF && b[1] === 0xFE) return { text: new TextDecoder('utf-16le').decode(b.subarray(2)), enc: 'UTF-16', ok: true };
+  if (b[0] === 0xFE && b[1] === 0xFF) return { text: new TextDecoder('utf-16be').decode(b.subarray(2)), enc: 'UTF-16', ok: true };
+  const tryDec = (enc, back) => {
+    for (let k = 0; k <= (cut ? back : 0); k++) {
+      try { return new TextDecoder(enc, { fatal: true }).decode(b.subarray(0, b.length - k)); } catch (e) { /* 次へ */ }
+    }
+    return null;
+  };
+  let s = tryDec('utf-8', 3);
+  if (s != null) return { text: s, enc: 'UTF-8', ok: true };
+  s = tryDec('shift_jis', 1);
+  if (s != null) return { text: s, enc: 'シフト JIS', ok: true };
+  s = tryDec('euc-jp', 2);
+  if (s != null) return { text: s, enc: 'EUC-JP', ok: true };
+  return { text: new TextDecoder('utf-8').decode(b), enc: 'UTF-8（読めない文字あり）', ok: false };
+}
+
+/* ---------- 開いたファイルの一覧（タブ） ---------- */
+const S = { items: [], cur: null, view: null, seq: 0, token: 0 };
+
+function addFiles(files) {
+  const added = [];
+  for (const f of files) added.push(addItem(f, (f._path || '').replace(/^\//, '') || f.name));
+  if (added.length) show(added[0]);
+}
+function addItem(file, name) {
+  const it = { id: ++S.seq, file, name };
+  S.items.push(it);
+  return it;
+}
+function closeItem(it) {
+  const i = S.items.indexOf(it);
+  if (i < 0) return;
+  S.items.splice(i, 1);
+  if (S.cur === it) {
+    const next = S.items[Math.min(i, S.items.length - 1)];
+    if (next) show(next);
+    else { endView(); S.cur = null; $('#viewer').hidden = true; renderTabs(); $('#kinds').open = true; }
+  } else renderTabs();
+}
+function renderTabs() {
+  const t = $('#tabs');
+  t.textContent = '';
+  t.hidden = S.items.length < 2;
+  for (const it of S.items) {
+    const tab = h('div', 'tab' + (it === S.cur ? ' on' : ''));
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', it === S.cur);
+    tab.title = it.name;
+    tab.appendChild(h('span', 'tn', it.name.split(' › ').pop().split('/').pop()));
+    const x = h('button', 'x');
+    x.type = 'button'; x.innerHTML = X_ICON; x.setAttribute('aria-label', `${it.name} を閉じる`);
+    tab.appendChild(x);
+    tab.addEventListener('click', e => { if (e.target.closest('.x')) closeItem(it); else if (it !== S.cur) show(it); });
+    t.appendChild(tab);
+  }
+  const on = t.querySelector('.tab.on');
+  if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+/* ---------- 表示（1つのファイルぶん） ---------- */
+function endView() {
+  const v = S.view;
+  S.view = null;
+  if (!v) return;
+  v.dead = true;
+  for (const f of v.disposers.splice(0)) { try { f(); } catch (e) { console.warn(e); } }
+}
+async function show(it) {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  endView();
+  S.cur = it;
+  renderTabs();
+  const token = ++S.token;
+  const body = h('div'), tools = h('div', 'vtools');
+  $('#viewer').hidden = false;
+  $('#vname').textContent = it.name;
+  $('#vinfo').textContent = fmtSize(it.file.size);
+  $('#vtools').replaceChildren(tools);
+  $('#vnote').hidden = true;
+  $('#vbody').className = 'vbody';
+  $('#vbody').replaceChildren(body);
+  body.appendChild(waiting('読み込み中…'));
+  $('#kinds').open = false;
+  const v = {
+    it, body, tools, dead: false, disposers: [],
+    alive: () => !v.dead && S.token === token,
+    onDispose(f) { if (v.dead) f(); else v.disposers.push(f); },
+    info(text) { if (v.alive()) $('#vinfo').textContent = text; },
+    note(text, warn) { if (!v.alive()) return; const n = $('#vnote'); n.textContent = text; n.hidden = !text; n.classList.toggle('warn', !!warn); },
+    flat(on) { if (v.alive()) $('#vbody').classList.toggle('flat', on); },
+  };
+  S.view = v;
+  try {
+    const t = await sniff(it.file);
+    if (!v.alive()) return;
+    it.kind = t;
+    await (VIEWERS[t.kind] || viewUnknown)(it.file, v, t);
+  } catch (e) {
+    console.error(e);
+    if (v.alive()) message(v, 'このファイルを表示できませんでした', errText(e));
+  }
+  if (v.alive()) commonTools(v);
+}
+function errText(e) {
+  if (e && e.code === 'encrypted') return 'パスワードつきの ZIP は開けません。';
+  if (e && (e.code === 'notzip' || e.code === 'broken')) return 'ファイルがこわれているか、途中までしか届いていないかもしれません。';
+  if (e && e.name === 'InvalidPDFException') return 'PDF がこわれているかもしれません。';
+  return 'ファイルがこわれているか、この道具では読めない作りのファイルです。' + (e && e.message ? `（${e.message}）` : '');
+}
+function waiting(text) {
+  const d = h('div', 'wait');
+  d.append(h('div', 'spin'), h('span', null, text));
+  return d;
+}
+function message(v, title, detail, button) {
+  const d = h('div', 'msg');
+  d.appendChild(h('b', null, title));
+  if (detail) d.appendChild(h('div', null, detail));
+  if (button) d.appendChild(button);
+  v.body.replaceChildren(d);
+  v.flat(true);
+}
+function btn(text, onClick, title) {
+  const b = h('button', 'btn', text);
+  b.type = 'button';
+  if (title) b.title = title;
+  b.addEventListener('click', onClick);
+  return b;
+}
+// どの種類でも出すボタン：ほかのアプリに送る（スマホ）・閉じる
+function commonTools(v) {
+  const f = v.it.file;
+  if (canShareFiles([f])) v.tools.appendChild(btn('共有', () => shareFiles([f]), 'ほかのアプリに送る・ほかのアプリで開く'));
+  const x = btn('閉じる', () => closeItem(v.it));
+  v.tools.appendChild(x);
+}
+
+/* ---------- ページを縦に並べて見せる（PDF・スライド共通） ----------
+   見えている所（とその少し先）だけ描き、遠くへ行ったものは片付ける（スマホのメモリのため）
+   o: { count, aspect(i) 高さ÷幅, label(i), render(item, 幅px) → 要素, rescale(item, 幅px)（描き直さずに大きさだけ合わせられるとき）, unload(item, 要素) } */
+class PageStack {
+  constructor(v, o) {
+    this.v = v; this.o = o; this.zoom = 1; this.width = 0; this.queue = new Set(); this.busy = false; this.dead = false;
+    this.list = h('div', 'pages');
+    this.items = [];
+    this.byEl = new Map();
+    for (let i = 0; i < o.count; i++) {
+      const wrap = h('div', 'pitem'), lab = h('div', 'plab', o.label(i)), pg = h('div', 'pg'), after = h('div');
+      pg.style.aspectRatio = `1 / ${o.aspect(i)}`;
+      wrap.append(lab, pg, after);
+      this.list.appendChild(wrap);
+      const it = { i, wrap, lab, pg, after, node: null, w: 0, near: false, visible: false };
+      this.items.push(it);
+      this.byEl.set(wrap, it);
+    }
+    v.body.replaceChildren(this.list);
+    this.layout();
+    this.ro = new ResizeObserver(() => this.layout());
+    this.ro.observe($('#vbody'));
+    this.watch();
+    this.onFs = () => { this.watch(); this.layout(); };
+    document.addEventListener('fullscreenchange', this.onFs);
+    v.onDispose(() => this.destroy());
+  }
+  // 見えているかを見張る。全画面のときはその中のスクロールを基準にする
+  watch() {
+    if (this.io) { this.io.disconnect(); this.io2.disconnect(); }
+    const fs = document.fullscreenElement, root = fs && fs.contains(this.list) ? $('#vbody') : null;
+    this.io = new IntersectionObserver(es => {
+      for (const e of es) {
+        const it = this.byEl.get(e.target);
+        if (!it) continue;
+        it.near = e.isIntersecting;
+        if (it.near) this.queue.add(it); else this.unload(it);
+      }
+      this.pump();
+    }, { root, rootMargin: '1500px 0px' });
+    this.io2 = new IntersectionObserver(es => {
+      for (const e of es) { const it = this.byEl.get(e.target); if (it) it.visible = e.isIntersecting; }
+      this.showPos();
+      this.pump();
+    }, { root });
+    for (const it of this.items) { this.io.observe(it.wrap); this.io2.observe(it.wrap); }
+  }
+  baseWidth() {
+    const host = $('#vbody'), cs = getComputedStyle(host);
+    return Math.max(120, host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
+  }
+  layout() {
+    if (this.dead) return;
+    const w = Math.floor(this.baseWidth() * this.zoom);
+    if (w === this.width) return;
+    this.width = w;
+    this.list.style.width = w + 'px';
+    for (const it of this.items) {
+      if (!it.node || it.w === w) continue;
+      if (this.o.rescale) { this.o.rescale(it, w); it.w = w; } else if (it.near) this.queue.add(it);
+    }
+    this.pump();
+  }
+  setZoom(z) {
+    // 今見ている所が動かないように、拡大のあとでスクロールし直す
+    const fs = document.fullscreenElement && document.fullscreenElement.contains(this.list);
+    const sc = fs ? $('#vbody') : document.scrollingElement;
+    const top = fs ? sc.getBoundingClientRect().top : 0;
+    const a = this.items.find(it => it.wrap.getBoundingClientRect().bottom > top + 1);
+    let frac = 0;
+    if (a) { const r = a.wrap.getBoundingClientRect(); frac = r.height ? (top - r.top) / r.height : 0; }
+    this.zoom = z;
+    this.layout();
+    if (a) { const r = a.wrap.getBoundingClientRect(); sc.scrollTop += r.top + frac * r.height - top; }
+  }
+  setAspect(i, a) { const it = this.items[i]; if (it) it.pg.style.aspectRatio = `1 / ${a}`; }
+  setLabel(i, text, hidden) {
+    const it = this.items[i];
+    if (!it) return;
+    it.lab.textContent = text;
+    if (hidden) it.lab.appendChild(h('span', 'hid', '非表示のスライド'));
+  }
+  current() { const it = this.items.find(x => x.visible); return it ? it.i : 0; }
+  showPos() { if (this.onPos) this.onPos(this.current()); }
+  unload(it) {
+    if (!it.node) return;
+    if (this.o.unload) this.o.unload(it, it.node);
+    it.pg.textContent = '';
+    it.node = null; it.w = 0;
+  }
+  async pump() {
+    if (this.busy || this.dead) return;
+    this.busy = true;
+    try {
+      while (!this.dead) {
+        // 見えているものを先に、次に今の場所に近いものから
+        const cur = this.current();
+        let best = null;
+        for (const it of [...this.queue]) {
+          if (!it.near) { this.queue.delete(it); continue; }
+          if (!best || (it.visible && !best.visible) || (it.visible === best.visible && Math.abs(it.i - cur) < Math.abs(best.i - cur))) best = it;
+        }
+        if (!best) break;
+        this.queue.delete(best);
+        if (best.node && best.w === this.width) continue;
+        const w = this.width;
+        let node;
+        try { node = await this.o.render(best, w); }
+        catch (e) { console.warn(e); node = h('div', 'perr', 'このページを表示できませんでした'); }
+        if (this.dead || !best.near) { if (this.o.unload) this.o.unload(best, node); if (this.dead) break; continue; }
+        if (best.node) this.unload(best);
+        best.pg.replaceChildren(node);
+        best.node = node; best.w = w;
+        if (this.width !== w) { if (this.o.rescale) { this.o.rescale(best, this.width); best.w = this.width; } else this.queue.add(best); }
+      }
+    } finally { this.busy = false; }
+  }
+  destroy() {
+    this.dead = true;
+    if (this.io) { this.io.disconnect(); this.io2.disconnect(); }
+    this.ro.disconnect();
+    document.removeEventListener('fullscreenchange', this.onFs);
+    for (const it of this.items) this.unload(it);
+  }
+}
+// ページ表示の道具：今のページ・拡大縮小・全画面
+function pageTools(v, stack, total, unit) {
+  const pos = h('span', 'pos');
+  stack.onPos = i => { pos.textContent = `${i + 1} / ${total} ${unit}`; };
+  stack.onPos(0);
+  const zoom = h('div', 'zoom'), minus = h('button', null, '−'), out = h('output'), plus = h('button', null, '＋');
+  minus.type = plus.type = 'button';
+  minus.setAttribute('aria-label', '小さく'); plus.setAttribute('aria-label', '大きく');
+  out.title = '画面の幅に合わせた大きさを 100% とします。押すと 100% にもどる';
+  const set = z => {
+    stack.setZoom(z);
+    out.textContent = Math.round(z * 100) + '%';
+    const k = ZOOMS.indexOf(z);
+    minus.disabled = k <= 0; plus.disabled = k >= ZOOMS.length - 1;
+  };
+  minus.addEventListener('click', () => set(ZOOMS[Math.max(0, ZOOMS.indexOf(stack.zoom) - 1)]));
+  plus.addEventListener('click', () => set(ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(stack.zoom) + 1)]));
+  out.addEventListener('click', () => set(1));
+  out.style.cursor = 'pointer';
+  zoom.append(minus, out, plus);
+  set(1);
+  v.tools.append(pos, zoom);
+  if (document.fullscreenEnabled) {
+    const fsb = btn('全画面', () => {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      else $('#viewer').requestFullscreen().catch(() => toast('全画面にできませんでした'));
+    });
+    const sync = () => { fsb.textContent = document.fullscreenElement ? '全画面をやめる' : '全画面'; };
+    document.addEventListener('fullscreenchange', sync);
+    v.onDispose(() => document.removeEventListener('fullscreenchange', sync));
+    v.tools.appendChild(fsb);
+  }
+}
+
+/* ---------- PDF ---------- */
+async function viewPdf(file, v) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let asked = false, doc;
+  try {
+    doc = await PdfView.open(bytes, {
+      onPassword: again => { asked = true; return prompt(again ? 'パスワードが違います。もう一度入れてください' : 'この PDF はパスワードで守られています。パスワードを入れてください'); },
+    });
+  } catch (e) {
+    if (asked || (e && e.name === 'PasswordException')) {
+      return message(v, 'パスワードが必要な PDF です', '開くには、正しいパスワードを入れてください。', btn('パスワードを入れる', () => show(v.it)));
+    }
+    throw e;
+  }
+  v.onDispose(() => PdfView.close(doc));
+  if (!v.alive()) return;
+  const n = doc.numPages, asp = new Array(n).fill(0);
+  const p1 = await doc.getPage(1), vp1 = p1.getViewport({ scale: 1 });
+  asp[0] = vp1.height / vp1.width;
+  const paper = PdfView.paperName(p1.view, p1.rotate);
+  p1.cleanup();
+  if (!v.alive()) return;
+  v.info(`PDF・${n} ページ・${paper}${n > 1 ? ' など' : ''}・${fmtSize(file.size)}`);
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  const stack = new PageStack(v, {
+    count: n,
+    aspect: i => asp[i] || asp[0],
+    label: i => `${i + 1} / ${n}`,
+    render: async (it, w) => {
+      const a = asp[it.i] || asp[0];
+      const r = await PdfView.renderPage(doc, it.i, { maxSide: w * dpr * Math.max(1, a), maxPixels: 8e6 });
+      const real = r.canvas.height / r.canvas.width;
+      if (Math.abs(real - a) > 0.01) { asp[it.i] = real; stack.setAspect(it.i, real); }
+      return r.canvas;
+    },
+    unload: (it, c) => { if (c.tagName === 'CANVAS') c.width = c.height = 0; },
+  });
+  v.stack = stack;
+  pageTools(v, stack, n, 'ページ');
+  v.note('ページを絵として表示しています（文字を選んでコピーすることはできません）。');
+  // ほかのページの大きさを、裏で順に調べる（縦横がまざった PDF でも並びがずれないように）
+  (async () => {
+    for (let i = 1; i < n && v.alive(); i++) {
+      if (asp[i]) continue;
+      const p = await doc.getPage(i + 1), vp = p.getViewport({ scale: 1 });
+      p.cleanup();
+      if (!asp[i]) { asp[i] = vp.height / vp.width; if (Math.abs(asp[i] - asp[0]) > 0.001) stack.setAspect(i, asp[i]); }
+    }
+  })().catch(() => {});
+}
+
+/* ---------- PowerPoint ---------- */
+async function viewPptx(file, v, zip) {
+  const deck = await Pptx.open(zip);
+  v.onDispose(() => deck.dispose());
+  if (!v.alive()) return;
+  if (!deck.count) return message(v, 'スライドが1枚もありません');
+  const ratio = deck.height / deck.width;
+  v.info(`PowerPoint・${deck.count} 枚・${Math.abs(ratio - 9 / 16) < 0.01 ? '16:9' : Math.abs(ratio - 0.75) < 0.01 ? '4:3' : '横 ' + Math.round(deck.width) + '×' + Math.round(deck.height)}・${fmtSize(file.size)}`);
+  const stack = new PageStack(v, {
+    count: deck.count,
+    aspect: () => ratio,
+    label: i => `${i + 1} / ${deck.count}`,
+    render: async (it, w) => {
+      const s = await deck.slide(it.i);
+      s.el.style.transform = `scale(${w / deck.width})`;
+      stack.setLabel(it.i, `${it.i + 1} / ${deck.count}`, s.hidden);
+      it.after.replaceChildren();
+      if (s.notes) it.after.appendChild(h('div', 'pnotes', s.notes));
+      return s.el;
+    },
+    rescale: (it, w) => { it.node.style.transform = `scale(${w / deck.width})`; },
+  });
+  v.stack = stack;
+  pageTools(v, stack, deck.count, '枚');
+  if (zip.entries.some(e => /^ppt\/notesSlides\/[^/]+\.xml$/i.test(e.name))) {
+    const lab = h('label', 'chk'), cb = h('input');
+    cb.type = 'checkbox';
+    cb.addEventListener('change', () => stack.list.classList.toggle('notes', cb.checked));
+    lab.append(cb, document.createTextNode('ノート'));
+    lab.title = '発表者用のメモ（ノート）を、スライドの下に出す';
+    v.tools.appendChild(lab);
+  }
+  v.note('書体はこの端末にあるもので代わりに表示しています。文字の大きさや改行の位置が元と少し違うことがあります。グラフ・アニメーション・動画は表示されません。', true);
+}
+
+/* ---------- ZIP（Word・Excel・PowerPoint も中身は ZIP） ---------- */
+async function viewZipLike(file, v) {
+  const zip = await Zip.open(file);
+  if (!v.alive()) return;
+  if (zip.get('ppt/presentation.xml')) return viewPptx(file, v, zip);
+  if (zip.get('word/document.xml')) return message(v, 'Word のファイルの表示は準備中です', 'このあと作ります（.docx）。', zipButton(file, v, zip));
+  if (zip.get('xl/workbook.xml')) return message(v, 'Excel のファイルの表示は準備中です', 'このあと作ります（.xlsx）。', zipButton(file, v, zip));
+  return viewZip(file, v, zip);
+}
+function zipButton(file, v, zip) {
+  return btn('中のファイルの一覧を見る', () => { v.note(''); viewZip(file, v, zip); });
+}
+function viewZip(file, v, zip) {
+  const files = zip.entries.filter(e => !e.dir).sort((a, b) => collator.compare(a.name, b.name));
+  v.info(`ZIP・${files.length} 個のファイル・${fmtSize(file.size)}`);
+  v.flat(true);
+  const mt = zip.get('mimetype');
+  if (mt && extOf(file.name) === 'epub') v.note('電子書籍（EPUB）は、中のファイルの一覧だけ表示します。');
+  else if (/^(odt|ods|odp|odg)$/.test(extOf(file.name))) v.note('OpenDocument（LibreOffice など）の形式は、中のファイルの一覧だけ表示します。');
+  if (!files.length) return message(v, '中にファイルがありません（空の ZIP）');
+  const tbl = h('table', 'zlist'), tb = h('tbody');
+  tbl.appendChild(tb);
+  for (const e of files.slice(0, MAX_ZIP_LIST)) {
+    const tr = h('tr'), slash = e.name.lastIndexOf('/');
+    const base = e.name.slice(slash + 1), dir = slash >= 0 ? e.name.slice(0, slash + 1) : '';
+    const tdn = h('td', 'zn');
+    tdn.appendChild(document.createTextNode(base));
+    if (dir) tdn.appendChild(h('span', 'zd', dir));
+    const tda = h('td', 'za');
+    if (e.encrypted) tda.appendChild(h('span', 'lock', 'パスワードつき'));
+    else {
+      const sv = btn('保存', async ev => {
+        ev.stopPropagation();
+        try { saveBlob(await zip.blob(e), base); } catch (err) { toast('取り出せませんでした：' + errText(err)); }
+      }, 'このファイルだけ取り出して保存');
+      tda.appendChild(sv);
+      tr.className = 'open';
+      tr.title = 'タップで中身を見る';
+      tr.addEventListener('click', () => openEntry(v.it, zip, e, base));
+    }
+    tr.append(tdn, h('td', 'zs', fmtSize(e.size)), tda);
+    tb.appendChild(tr);
+  }
+  v.body.replaceChildren(tbl);
+  if (files.length > MAX_ZIP_LIST) v.body.appendChild(h('p', 'note', `ほかに ${files.length - MAX_ZIP_LIST} 個あります（一覧は ${MAX_ZIP_LIST} 個まで）`));
+}
+async function openEntry(parent, zip, e, base) {
+  if (e.size > MAX_ZIP_OPEN) return toast(`大きすぎて開けません（${fmtSize(MAX_ZIP_OPEN)} まで）`);
+  const name = `${parent.name} › ${e.name}`, open = S.items.find(i => i.name === name);
+  if (open) return show(open); // もう開いているものは、そのタブへ
+  try {
+    const ext = extOf(base);
+    const blob = await zip.blob(e, IMG_MIME[ext] || '');
+    const it = addItem(new File([blob], base, { type: blob.type }), name);
+    show(it);
+  } catch (err) { toast('取り出せませんでした：' + errText(err)); }
+}
+
+/* ---------- 古い形式・パスワードつきの Office ---------- */
+async function viewCfb(file, v) {
+  const ext = extOf(file.name);
+  // パスワードつきの Word・Excel・PowerPoint は、中に「EncryptedPackage」という名前の部分がある
+  const head = new Uint8Array(await file.slice(0, 1 << 18).arrayBuffer());
+  const mark = 'EncryptedPackage', u16 = [];
+  for (const ch of mark) u16.push(ch.charCodeAt(0), 0);
+  const protectedFile = OOXML.test(ext) || findBytes(head, u16) >= 0;
+  if (protectedFile) return message(v, 'パスワードで守られた Office のファイルは開けません', 'Word・Excel・PowerPoint でパスワードを外して保存し直すと、ここで見られます。');
+  const name = /^(doc|dot)$/.test(ext) ? 'Word' : /^(xls|xlt|xla)$/.test(ext) ? 'Excel' : /^(ppt|pps|pot)$/.test(ext) ? 'PowerPoint' : '';
+  if (name) return message(v, `古い形式の ${name} のファイル（.${ext}）は開けません`, `${name} などで開いて、新しい形式（.${{ Word: 'docx', Excel: 'xlsx', PowerPoint: 'pptx' }[name]}）で保存し直すと見られます。`);
+  message(v, 'この種類のファイルは表示できません', '古い形式の Office のファイルなどです。');
+}
+function findBytes(hay, needle) {
+  outer: for (let i = 0; i + needle.length <= hay.length; i++) {
+    for (let j = 0; j < needle.length; j++) if (hay[i + j] !== needle[j]) continue outer;
+    return i;
+  }
+  return -1;
+}
+
+/* ---------- 画像 ---------- */
+async function viewImage(file, v, t) {
+  const blob = t.mime && file.type !== t.mime ? new Blob([file], { type: t.mime }) : file;
+  const url = URL.createObjectURL(blob);
+  v.onDispose(() => URL.revokeObjectURL(url));
+  const img = new Image();
+  img.alt = file.name;
+  img.decoding = 'async';
+  img.src = url;
+  await new Promise(res => { img.onload = res; img.onerror = res; });
+  if (!v.alive()) return;
+  if (!img.naturalWidth) {
+    if (t.sub === 'heic') return message(v, 'HEIC（iPhone の写真）は、この端末では表示できません', 'iPhone の「設定」→「カメラ」→「フォーマット」を「互換性優先」にすると、JPEG で保存されるようになります。');
+    if (t.sub === 'tiff') return message(v, 'TIFF の画像は、この端末では表示できません');
+    return message(v, 'この画像は表示できませんでした', 'こわれているか、この端末が対応していない形式です。');
+  }
+  const kind = (t.mime || '').replace('image/', '').replace('svg+xml', 'SVG').replace('jpeg', 'JPEG').toUpperCase();
+  v.info(`画像${kind ? '（' + kind + '）' : ''}・${img.naturalWidth} × ${img.naturalHeight}・${fmtSize(file.size)}`);
+  const box = h('div', 'imgbox');
+  box.appendChild(img);
+  img.title = 'タップで原寸／画面に合わせるを切りかえ';
+  img.addEventListener('click', () => box.classList.toggle('full'));
+  v.body.replaceChildren(box);
+  if (t.sub === 'heic') v.note('HEIC の写真は、端末によっては表示できません。');
+}
+
+/* ---------- 動画・音声 ---------- */
+function viewMedia(file, v, t) {
+  const url = URL.createObjectURL(file);
+  const el = document.createElement(t.sub === 'audio' ? 'audio' : 'video');
+  el.controls = true;
+  el.preload = 'metadata';
+  el.playsInline = true;
+  el.src = url;
+  v.onDispose(() => { el.pause(); el.removeAttribute('src'); el.load(); URL.revokeObjectURL(url); });
+  const box = h('div', 'media');
+  box.appendChild(el);
+  v.body.replaceChildren(box);
+  v.flat(true);
+  const sec = s => { s = Math.round(s); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+  el.addEventListener('loadedmetadata', () => {
+    const isVideo = el.videoWidth > 0;
+    v.info(`${isVideo ? '動画' : '音声'}・${isFinite(el.duration) ? sec(el.duration) : '長さ不明'}${isVideo ? `・${el.videoWidth} × ${el.videoHeight}` : ''}・${fmtSize(file.size)}`);
+  });
+  el.addEventListener('error', () => {
+    if (!v.alive()) return;
+    message(v, 'この形式は、この端末では再生できません', `${extOf(file.name) ? '.' + extOf(file.name) + ' の' : ''}ファイルの中の動画・音声の形式に、この端末（ブラウザ）が対応していません。`);
+  });
+}
+
+/* ---------- 文章 ---------- */
+async function viewText(file, v, t) {
+  const cut = file.size > MAX_TEXT;
+  const bytes = new Uint8Array(await file.slice(0, MAX_TEXT).arrayBuffer());
+  if (!v.alive()) return;
+  const { text, enc } = decodeText(bytes, cut);
+  const ext = extOf(file.name);
+  let lines = 1;
+  for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) lines++;
+  v.info(`文章・${enc}・${lines.toLocaleString()} 行${cut ? '（はじめの部分）' : ''}・${fmtSize(file.size)}`);
+  const notes = [];
+  if (cut) notes.push(`大きなファイルなので、はじめの ${fmtSize(MAX_TEXT)} だけ表示しています。`);
+  if (t.guess) notes.push('種類が分からないファイルなので、文章として表示しています。');
+  v.flat(true);
+  const isCsv = ext === 'csv' || ext === 'tsv' || /text\/(csv|tab-separated)/.test(file.type);
+  const isJson = /^(json|geojson|webmanifest)$/.test(ext) || /json/.test(file.type);
+  const modes = isCsv ? [['table', '表'], ['text', '文字']] : isJson ? [['pretty', '整えて'], ['text', 'そのまま']] : [['text', '']];
+  let mode = modes[0][0], wrap = true;
+  const mono = !PLAIN_EXT.test(ext) || isCsv;
+  let csvInfo = null;
+  function render() {
+    let node;
+    if (mode === 'table') {
+      const sep = ext === 'tsv' || /tab-separated/.test(file.type) ? '\t' : guessSep(text);
+      const r = parseCsv(text, sep, MAX_TABLE_ROWS);
+      csvInfo = r;
+      node = csvTable(r.rows);
+    } else if (mode === 'pretty') {
+      try { node = pre(JSON.stringify(JSON.parse(text), null, 2), true); }
+      catch (e) { node = pre(text, true); v.note([...notes, 'JSON として読めなかったので、そのまま表示しています。'].join(' ')); return v.body.replaceChildren(node); }
+    } else node = pre(text, mono);
+    v.body.replaceChildren(node);
+    const n = [...notes];
+    if (mode === 'table' && csvInfo && csvInfo.more) n.push(`表は ${MAX_TABLE_ROWS.toLocaleString()} 行まで表示しています（「文字」にすると全部見られます）。`);
+    v.note(n.join(' '));
+  }
+  const pre = (s, m) => { const p = h('pre', 'txt' + (m ? ' mono' : '') + (wrap ? '' : ' nowrap'), s); return p; };
+  if (modes.length > 1) {
+    const seg = h('div', 'seg'), name = 'tm' + v.it.id;
+    for (const [val, label] of modes) {
+      const l = h('label'), r = h('input');
+      r.type = 'radio'; r.name = name; r.value = val; r.checked = val === mode;
+      r.addEventListener('change', () => { mode = val; wrapBox.hidden = mode === 'table'; render(); });
+      l.append(r, document.createTextNode(label));
+      seg.appendChild(l);
+    }
+    v.tools.appendChild(seg);
+  }
+  const wrapBox = h('label', 'chk'), cb = h('input');
+  cb.type = 'checkbox'; cb.checked = wrap;
+  cb.addEventListener('change', () => { wrap = cb.checked; render(); });
+  wrapBox.append(cb, document.createTextNode('折り返す'));
+  wrapBox.hidden = mode === 'table';
+  v.tools.appendChild(wrapBox);
+  render();
+}
+function guessSep(text) {
+  const line = text.slice(0, 2000).split('\n')[0];
+  const c = (line.match(/,/g) || []).length, s = (line.match(/;/g) || []).length, t = (line.match(/\t/g) || []).length;
+  return t > c && t > s ? '\t' : s > c ? ';' : ',';
+}
+// CSV を行と列に分ける（"" で囲んだ中の , や改行もそのまま）
+function parseCsv(text, sep, maxRows) {
+  const rows = [];
+  let row = [], f = '', q = false, i = text.charCodeAt(0) === 0xFEFF ? 1 : 0;
+  const n = text.length;
+  for (; i < n; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c;
+    } else if (c === '"' && f === '') q = true;
+    else if (c === sep) { row.push(f); f = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(f); rows.push(row); row = []; f = '';
+      if (rows.length >= maxRows) return { rows, more: i < n - 1 };
+    } else f += c;
+  }
+  if (f !== '' || row.length) { row.push(f); rows.push(row); }
+  return { rows, more: false };
+}
+function csvTable(rows) {
+  const wrap = h('div', 'tblwrap'), t = h('table', 'csv');
+  const cols = rows.reduce((m, r) => Math.max(m, r.length), 0);
+  const thead = h('thead'), hr = h('tr');
+  hr.appendChild(h('th', 'rn', ''));
+  for (let c = 0; c < cols; c++) hr.appendChild(h('th', null, (rows[0] || [])[c] || ''));
+  thead.appendChild(hr);
+  const tb = h('tbody');
+  for (let r = 1; r < rows.length; r++) {
+    const tr = h('tr');
+    tr.appendChild(h('th', 'rn', String(r + 1)));
+    for (let c = 0; c < cols; c++) tr.appendChild(h('td', null, rows[r][c] || ''));
+    tb.appendChild(tr);
+  }
+  t.append(thead, tb);
+  wrap.appendChild(t);
+  return wrap;
+}
+
+/* ---------- そのほか ---------- */
+function viewUnknown(file, v) {
+  const ext = extOf(file.name);
+  message(v, 'この種類のファイルは表示できません', `${ext ? '.' + ext + ' の' : '種類の分からない'}ファイルです。それ用のアプリで開いてください。`);
+}
+const VIEWERS = {
+  empty: (f, v) => message(v, '空のファイルです（中身が 0 バイト）'),
+  pdf: viewPdf,
+  zip: viewZipLike,
+  cfb: viewCfb,
+  broken: (f, v, t) => message(v, 'ファイルがこわれているようです', `.${t.what} のファイルとして読めませんでした。途中までしか届いていないかもしれません。`),
+  image: viewImage,
+  media: viewMedia,
+  text: viewText,
+};
+
+/* ---------- ファイルを受け取る ---------- */
+setupFileInput({ drop: $('#drop'), input: $('#file'), onFiles: fs => addFiles(fs) });
+
+// スマホの「共有」から届いたファイル（sw.js が一時的にしまっておいたもの）
+const safeDecode = s => { try { return decodeURIComponent(s); } catch (e) { return s; } };
+(async () => {
+  if (!new URLSearchParams(location.search).has('shared')) return;
+  history.replaceState(null, '', location.pathname);
+  try {
+    const cache = await caches.open('share-inbox'), files = [];
+    for (const req of await cache.keys()) {
+      const res = await cache.match(req), blob = await res.blob();
+      files.push(new File([blob], safeDecode(res.headers.get('X-File-Name') || '共有されたファイル'), { type: blob.type || res.headers.get('Content-Type') || '' }));
+      await cache.delete(req);
+    }
+    if (files.length) addFiles(files); else toast('共有されたファイルを受け取れませんでした。もう一度共有してみてください');
+  } catch (e) { toast('共有されたファイルを受け取れませんでした'); }
+})();
+</script>
+</body>
+</html>
