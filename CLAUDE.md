@@ -65,6 +65,7 @@ PC（Windows / Edge・Chrome）とスマホ（Android / Chrome）の両方で、
 - 縮小は半分ずつ段階的に（`downscale`）。一気に縮めると線がギザギザになる。
 - 画像の編集情報は `{ rot, flip, crop }`。適用順は「回転 → 反転 → 切り抜き」。`crop` は 0〜1 の割合。
 - `sw.js` の `CACHE` 名と `PRECACHE` 一覧は、ファイルを増やしたら更新する。
+- manifest の `id` は `"file-tools/"`。`"./"` にすると、Chrome は id をサイトのいちばん上（`ユーザー名.github.io/`）として読むので、同じ github.io に置いたほかのアプリ（単語帳・電卓）と同じアプリとみなされ「すでにインストールされています」になった（2026-11-09 に直した）。id を変えると、Chrome は別の新しいアプリとみなす（前のアイコンには manifest の変更が届かなくなる。データはサイトごとなので残る）。
 - 設定は `localStorage` に保存（`img2pdf-settings-v1`、`image-convert-settings-v1`、`qr-settings-v1`、`scan-settings-v1`、`pdf-pages-settings-v1`、`pdf-image-settings-v1`、`pdf-compress-settings-v1`、`pdf-write-settings-v1`、`media-settings-v1`、`gif-settings-v1`）。QR の入力内容は保存しない。
 - 注意点（制限・落とし穴）は、その機能のすぐそばに短く書く（ユーザーの希望）。まとめて遠くに書かない。
 

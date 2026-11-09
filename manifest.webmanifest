@@ -3,7 +3,7 @@
   "short_name": "ツール箱",
   "description": "画像やPDFを、この端末の中だけで変換・圧縮できる道具箱",
   "lang": "ja",
-  "id": "./",
+  "id": "file-tools/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
