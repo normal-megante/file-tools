@@ -14,7 +14,7 @@
     "method": "POST",
     "enctype": "multipart/form-data",
     "params": { "files": [{ "name": "file", "accept": [
-      "image/*", "video/*", "audio/*", "text/*",
+      "*/*", "image/*", "video/*", "audio/*", "text/*",
       "application/pdf", "application/zip", "application/x-zip-compressed", "application/json", "application/octet-stream",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       "application/vnd.openxmlformats-officedocument.presentationml.slideshow",

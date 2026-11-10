@@ -100,9 +100,30 @@
 .zlist .za{white-space:nowrap;text-align:right;width:1%}
 .zlist .za .btn{padding:2px 10px;font-size:12px}
 .zlist .lock{color:var(--muted);font-size:12px}
+/* Excel：上にセルの中身、まん中に表、下にシートの切りかえ */
+.vbody.xl{padding:0;overflow:hidden;display:flex;flex-direction:column;background:var(--panel)}
+.xlbar{display:flex;align-items:flex-start;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line);font-size:13px;min-height:30px;box-sizing:border-box}
+.xladdr{flex:none;min-width:4.2em;font-weight:600;font-variant-numeric:tabular-nums;border-right:1px solid var(--line);padding-right:8px;line-height:20px}
+.xlval{flex:1;min-width:0;white-space:pre-wrap;word-break:break-all;max-height:6.6em;overflow:auto;line-height:20px;user-select:text}
+.xlval .fx{color:var(--muted);font-size:11.5px;margin-left:8px;white-space:nowrap}
+.xlval:empty::before{content:"セルをタップすると、ここに中身と数式が出ます";color:var(--muted);font-size:12px}
+.xlsub{padding:5px 10px;border-bottom:1px solid var(--line);font-size:12.5px;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap}
+.xlsub b{flex:none;font-size:11.5px;color:var(--muted)}
+.xlsub .t{flex:1 1 12em;min-width:0;white-space:pre-wrap;word-break:break-all;max-height:8em;overflow:auto;user-select:text}
+.xlsub .btn{padding:2px 10px;font-size:12px}
+.xlsub small{flex-basis:100%;color:var(--muted);font-size:11.5px}
+.xlhost{position:relative;height:min(72vh,900px);min-height:260px;flex:none}
+.xlhost > .xg-wrap{position:absolute;inset:0}
+.xlhost > .msg{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center}
+.xltabs{display:flex;align-items:stretch;gap:2px;overflow-x:auto;border-top:1px solid var(--line);background:var(--thumb-bg);padding:0 4px;flex:none}
+.xltab{flex:none;border:0;border-bottom:3px solid transparent;background:transparent;padding:7px 12px 5px;font-size:13px;cursor:pointer;color:var(--text);white-space:nowrap;max-width:14em;overflow:hidden;text-overflow:ellipsis;font-family:inherit}
+.xltab:hover{background:var(--accent-soft)}
+.xltab.on{background:var(--panel);font-weight:700;border-bottom-color:var(--accent)}
+.xlhid{flex:none;align-self:center;font-size:11.5px;color:var(--muted);padding:0 8px;white-space:nowrap}
 /* 全画面 */
 .viewer:fullscreen{border-radius:0;border:0;display:flex;flex-direction:column;width:100vw;height:100vh}
 .viewer:fullscreen .vbody{flex:1;min-height:0}
+.viewer:fullscreen .xlhost{flex:1;height:auto;min-height:0}
 </style>
 </head>
 <body>
@@ -110,7 +131,7 @@
   <header>
     <a class="back" href="./">← ツール箱にもどる</a>
     <h1>ファイルを見る</h1>
-    <p>PDF・Word・PowerPoint・画像・文章・動画・音声・ZIP の中身を表示します。見るだけの道具で、ファイルはこの端末の中だけで使われ、どこにも送られません。</p>
+    <p>PDF・Word・Excel・PowerPoint・画像・文章・動画・音声・ZIP の中身を表示します。見るだけの道具で、ファイルはこの端末の中だけで使われ、どこにも送られません。</p>
   </header>
 
   <div id="drop" class="drop compact" tabindex="0" role="button" aria-label="ファイルを選ぶ">
@@ -126,7 +147,7 @@
       <li><span class="k"><b>PDF</b></span><span class="c">ページを順に表示。パスワードつきも開けます。<em>文字を選んでコピーすることはできません（ページを絵として表示）。</em></span></li>
       <li><span class="k"><b>PowerPoint</b><small>.pptx（.ppsx・.pptm も）</small></span><span class="c">スライドとノート。<em>書体はこの端末にあるもので代わりに表示するので、文字の大きさや改行の位置が元と少し違うことがあります。グラフ・アニメーション・動画は表示されません（グラフは枠と名前だけ）。</em></span></li>
       <li><span class="k"><b>Word</b><small>.docx（.docm も）</small></span><span class="c">「ページ」は紙と同じページに分けて表示、「スマホ向け」は画面の幅で折り返して読みやすく（表は横にスクロール）。<em>書体はこの端末にあるもので代わりに表示するので、改行やページの切れ目が元と少し違うことがあります。段組みは1段・縦書きは横書きで表示。グラフ・SmartArt・EMF の図は枠だけ、コメントと変更履歴の印は出ません。</em></span></li>
-      <li><span class="k"><b>Excel</b><small>.xlsx</small></span><span class="c"><em>準備中です（このあと作ります）。</em></span></li>
+      <li><span class="k"><b>Excel</b><small>.xlsx（.xlsm も）</small></span><span class="c">シートを下で切りかえ。セルをタップすると、上に中身と数式・メモ・リンク。固定した行と列、セルの書式・表示形式（和暦も）・条件付き書式・図も Excel に合わせて表示。拡大縮小は 2 本指でも。<em>数式は計算し直さず、保存したときの結果を表示します。書体はこの端末にあるもので代わりに表示するので、文字のはみ出し方などが元と少し違うことがあります。グラフは枠だけ、マクロは動きません。隠したシートは出しません。.xlsb は開けません。</em></span></li>
       <li><span class="k"><b>画像</b><small>JPEG・PNG・WebP・GIF・BMP・SVG・AVIF</small></span><span class="c">画像をタップすると、原寸と画面に合わせた大きさを切りかえ。<em>HEIC（iPhone の写真）は、この端末が対応していないと表示できません。</em></span></li>
       <li><span class="k"><b>文章</b><small>.txt・.csv・.json・.md・.log など</small></span><span class="c">文字コード（UTF-8・シフト JIS など）は自動で見分けます。CSV は表、JSON は見やすく整えて表示。<em>とても大きなファイルは、はじめの 2 MB だけ表示します。</em></span></li>
       <li><span class="k"><b>動画・音声</b><small>MP4・WebM・MOV・MP3・M4A・WAV など</small></span><span class="c">そのまま再生。<em>この端末が再生できない形式（AVI・WMV など）は再生できません。</em></span></li>
@@ -152,6 +173,9 @@
 <script src="js/drawingml.js"></script>
 <script src="js/pptx.js"></script>
 <script src="js/docx.js"></script>
+<script src="js/numfmt.js"></script>
+<script src="js/xlsx.js"></script>
+<script src="js/xlgrid.js"></script>
 <script>
 'use strict';
 /* =========================================================
@@ -693,8 +717,152 @@ async function viewZipLike(file, v) {
   if (!v.alive()) return;
   if (zip.get('ppt/presentation.xml')) return viewPptx(file, v, zip);
   if (zip.get('word/document.xml')) return viewDocx(file, v, zip);
-  if (zip.get('xl/workbook.xml')) return message(v, 'Excel のファイルの表示は準備中です', 'このあと作ります（.xlsx）。', zipButton(file, v, zip));
+  if (zip.get('xl/workbook.xml')) return viewXlsx(file, v, zip);
+  if (zip.get('xl/workbook.bin')) return message(v, 'Excel のバイナリ形式（.xlsb）は開けません', 'Excel で開いて、ふつうの形式（.xlsx）で保存し直すと見られます。', zipButton(file, v, zip));
   return viewZip(file, v, zip);
+}
+
+/* ---------- Excel ----------
+   上：選んだセルの中身・数式（メモ・リンク）、まん中：表（js/xlgrid.js）、下：シートの切りかえ */
+const XL_ZOOMS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+async function viewXlsx(file, v, zip) {
+  const book = await Xlsx.open(zip);
+  v.onDispose(() => book.dispose());
+  if (!v.alive()) return;
+  const list = book.sheets.map((s, i) => ({ ...s, i })).filter(s => s.state === 'visible');
+  const hidden = book.sheets.length - list.length;
+  if (!list.length) return message(v, '見られるシートがありません', 'すべてのシートが隠されています。');
+  v.info(`Excel・シート ${list.length} 枚・${fmtSize(file.size)}`);
+  $('#vbody').classList.add('xl');
+  // 上の欄
+  const bar = h('div', 'xlbar'), addr = h('span', 'xladdr'), val = h('div', 'xlval');
+  bar.append(addr, val);
+  const sub = h('div');
+  const host = h('div', 'xlhost');
+  // 下のシートの切りかえ
+  const tabs = h('div', 'xltabs');
+  tabs.setAttribute('role', 'tablist');
+  v.body.replaceChildren(bar, sub, host, tabs);
+  const tabEls = new Map();
+  for (const s of list) {
+    const b = h('button', 'xltab', s.name || `シート${s.i + 1}`);
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    if (s.tab) b.style.borderBottomColor = s.tab;
+    if (s.kind === 'chart') b.title = 'グラフのシート';
+    b.addEventListener('click', () => open(s.i));
+    tabs.appendChild(b);
+    tabEls.set(s.i, b);
+  }
+  if (hidden) tabs.appendChild(h('span', 'xlhid', `ほかに隠れたシート ${hidden} 枚（表示しません）`));
+
+  // 拡大縮小（シートごとに覚える。はじめは保存したときの倍率）
+  const zoomOf = new Map();
+  const zoom = h('div', 'zoom'), minus = h('button', null, '−'), out = h('output'), plus = h('button', null, '＋');
+  minus.type = plus.type = 'button';
+  minus.setAttribute('aria-label', '小さく'); plus.setAttribute('aria-label', '大きく');
+  out.title = '押すと 100% にもどる（2本指で広げたり縮めたりもできます）';
+  out.style.cursor = 'pointer';
+  zoom.append(minus, out, plus);
+  const showZoom = z => {
+    out.textContent = Math.round(z * 100) + '%';
+    minus.disabled = !g || z <= XL_ZOOMS[0] + 0.001;
+    plus.disabled = !g || z >= XL_ZOOMS[XL_ZOOMS.length - 1] - 0.001;
+  };
+  minus.addEventListener('click', () => { if (g) g.setZoom([...XL_ZOOMS].reverse().find(x => x < g.zoom - 0.001) || XL_ZOOMS[0]); });
+  plus.addEventListener('click', () => { if (g) g.setZoom(XL_ZOOMS.find(x => x > g.zoom + 0.001) || XL_ZOOMS[XL_ZOOMS.length - 1]); });
+  out.addEventListener('click', () => { if (g) g.setZoom(1); });
+  v.tools.appendChild(zoom);
+  if (document.fullscreenEnabled) {
+    const fsb = btn('全画面', () => {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      else $('#viewer').requestFullscreen().catch(() => toast('全画面にできませんでした'));
+    });
+    const sync = () => { fsb.textContent = document.fullscreenElement ? '全画面をやめる' : '全画面'; };
+    document.addEventListener('fullscreenchange', sync);
+    v.onDispose(() => document.removeEventListener('fullscreenchange', sync));
+    v.tools.appendChild(fsb);
+  }
+  const macro = zip.entries.some(e => /^xl\/vbaProject\.bin$/i.test(e.name));
+  v.note(`数式は計算し直さず、保存したときの結果を表示しています。書体はこの端末にあるもので代わりに表示するので、文字がセルからはみ出す所などが元と少し違うことがあります。グラフは枠だけです。${macro ? 'マクロは動きません。' : ''}`, true);
+
+  let g = null, cur = -1, token = 0;
+  v.onDispose(() => { if (g) g.dispose(); g = null; });
+  // 選んだセルの中身を上の欄に出す
+  function showCell(info) {
+    if (!info) { addr.textContent = ''; val.textContent = ''; sub.replaceChildren(); return; }
+    addr.textContent = info.addr;
+    val.textContent = info.formula || info.value;
+    if (info.formula) val.appendChild(h('span', 'fx', `→ ${info.cell ? book.text(info.cell, book.style(info.cell.s)).text || '（空）' : '（空）'}`));
+    const rows = [];
+    if (info.note) {
+      const d = h('div', 'xlsub');
+      // 古い形のメモは、書いた人の名前が本文の頭に入っているので、名前は足さない
+      d.append(h('b', null, info.note.thread ? 'コメント' : 'メモ'), h('div', 't', (info.note.thread && info.note.author ? info.note.author + '：\n' : '') + info.note.text));
+      rows.push(d);
+    }
+    if (info.link) {
+      const L = info.link, d = h('div', 'xlsub');
+      d.appendChild(h('b', null, 'リンク'));
+      const url = L.url || '';
+      let ok = false;
+      try { ok = /^https?:$/.test(new URL(url).protocol); } catch (e) { /* URL でない */ }
+      if (url) {
+        d.appendChild(h('div', 't', url + (L.loc ? '#' + L.loc : '')));
+        if (ok) d.appendChild(btn('開く', () => window.open(url + (L.loc ? '#' + L.loc : ''), '_blank', 'noopener')));
+        d.appendChild(h('small', null, ok ? '本物のサイトか、行き先をよく確かめてから開いてください。' : 'このリンク（ファイルやメールなど）は、ここからは開けません。'));
+      } else if (L.loc) {
+        d.appendChild(h('div', 't', L.loc));
+        const target = parseLoc(L.loc);
+        if (target) d.appendChild(btn('移動', () => open(target.i, target)));
+      }
+      rows.push(d);
+    }
+    sub.replaceChildren(...rows);
+  }
+  // ブックの中のリンク（'シート名'!A1 など）→ { i, r, c }
+  function parseLoc(loc) {
+    const m = /^(?:'((?:[^']|'')+)'|([^!]+))!(.+)$/.exec(loc.trim());
+    const name = m ? (m[1] != null ? m[1].replace(/''/g, "'") : m[2]) : null;
+    const i = name != null ? book.sheets.findIndex(s => s.name === name) : cur;
+    const rg = Xlsx.range((m ? m[3] : loc).split(':')[0]);
+    if (i < 0 || !rg || book.sheets[i].state !== 'visible') return null;
+    return { i, r: rg.r0, c: rg.c0 };
+  }
+  async function open(i, at) {
+    if (i === cur && g) { if (at) { g.select(at.r, at.c); g.goto(at.r, at.c); } return; }
+    const my = ++token;
+    if (g) { zoomOf.set(cur, g.zoom); g.dispose(); g = null; }
+    cur = i;
+    for (const [k, b] of tabEls) { b.classList.toggle('on', k === i); b.setAttribute('aria-selected', k === i); }
+    const tb = tabEls.get(i);
+    if (tb) tb.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    showCell(null);
+    showZoom(1);
+    host.replaceChildren(waiting('シートを読み込み中…'));
+    let sh;
+    try { sh = await book.sheet(i); } catch (e) {
+      console.error(e);
+      if (v.alive() && my === token) host.replaceChildren(msgBox('このシートを表示できませんでした', errText(e)));
+      return;
+    }
+    if (!v.alive() || my !== token) return;
+    if (book.sheets[i].tab && tb) tb.style.borderBottomColor = book.sheets[i].tab;
+    if (sh.kind !== 'sheet') {
+      bar.hidden = true;
+      host.replaceChildren(msgBox(sh.kind === 'chart' ? `グラフのシート${sh.title ? '「' + sh.title + '」' : ''}です` : 'このシートは表示できません', sh.kind === 'chart' ? 'グラフはまだ表示できません（このあと作ります）。' : 'ダイアログやマクロのシートです。'));
+      return;
+    }
+    bar.hidden = false;
+    host.replaceChildren();
+    g = XlGrid.create(host, book, sh, { zoom: zoomOf.get(i) || sh.zoom || 1, onSelect: showCell, onZoom: showZoom });
+    showZoom(g.zoom);
+    const a = sh.active || null;
+    if (at) { g.select(at.r, at.c); g.goto(at.r, at.c); } else if (a) g.select(a.r, a.c);
+  }
+  const msgBox = (title, detail) => { const d = h('div', 'msg'); d.appendChild(h('b', null, title)); if (detail) d.appendChild(h('div', null, detail)); return d; };
+  const first = list.find(s => s.i === book.active) || list[0];
+  await open(first.i);
 }
 function zipButton(file, v, zip) {
   return btn('中のファイルの一覧を見る', () => { v.note(''); viewZip(file, v, zip); });
