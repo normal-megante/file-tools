@@ -12,7 +12,7 @@
 //   ・document.xml の段落・表を、styles.xml（スタイル）・numbering.xml（箇条書きの番号）の書式を重ねて HTML にする
 //   ・行の高さは Word と同じ計算（書体ごとの「1行」の高さ・行グリッド）。書体が違っても行数が合いやすいように
 //   ・ページ分け：見えない所に並べて高さをはかり、行の切れ目で切って紙に分ける（切った段落は上下をかくして2回置く）
-//   ・できないもの：段組み（1段で表示）、縦書き（横書きで表示）、グラフ（枠だけ）、EMF・WMF の図、変更履歴の色分け、コメント
+//   ・できないもの：段組み（1段で表示）、縦書き（横書きで表示）、EMF・WMF の図、変更履歴の色分け、コメント。グラフは js/chart.js
 // =========================================================
 const Docx = (() => {
   const { px, PT, kid, kids, pathOf, truthy, rAttr, h, color, css, fillOf, fillEl, lineOf, mergeLine,
@@ -1105,6 +1105,17 @@ const Docx = (() => {
       transformOf(pathOf(pic, 'spPr', 'xfrm'), el);
       return el;
     }
+    // グラフ（js/chart.js）
+    function chartBox(gd, W, H, X) {
+      const cp = OChart.chartPathOf(gd, X.src && X.src.rels);
+      if (!cp) return missing('グラフ（表示できません）');
+      const el = h('span', 'dx-pic');
+      // スマホ向けで 0.75 倍より縮むときは、字が小さくなりすぎないよう、グラフを小さく組み直してから縮める
+      const fit = X.mode === 'flow' && X.s ? Math.min(1, X.hk * X.s.cw / W) : 1, k = fit < 0.75 ? fit / 0.75 : 1;
+      X.wait.push(OChart.render(cp, { P: { xml }, theme, map: cmap, w: W * k, h: H * k, host: 'dx' }).then(svg => { el.appendChild(svg); })
+        .catch(e => { console.warn('グラフを描けませんでした', e); el.replaceChildren(missing('グラフ（表示できませんでした）')); }));
+      return el;
+    }
     function transformOf(xf, el) {
       if (!xf) return;
       const t = [], rot = atNum(xf, 'rot', 0) / 60000;
@@ -1172,7 +1183,7 @@ const Docx = (() => {
       if (n === 'pic') return picture(c, W, H, X);
       if (n === 'wsp') return shape(c, W, H, X);
       if (n === 'wgp') return group(c, W, H, X);
-      if (n === 'chart') return missing('グラフ（表示できません）');
+      if (n === 'chart') return chartBox(g, W, H, X);
       if (n === 'relIds') return missing('SmartArt（表示できません）');
       return missing('図（表示できません）');
     }

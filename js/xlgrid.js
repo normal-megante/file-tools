@@ -5,7 +5,7 @@
 //     host の中に、スクロールできる表を作る（列の記号・行の番号・固定した行と列）。
 //     見えている所だけを 512px 四方の canvas に描き、遠くの canvas は片付ける（スマホのメモリのため）
 //     g.setZoom(z)・g.zoom・g.select(r, c)・g.goto(r, c)・g.dispose()
-//   図（画像・図形・グラフの枠）は DOM（js/drawingml.js）で作って、表の上に置く
+//   図（画像・図形）は DOM（js/drawingml.js）、グラフは SVG（js/chart.js）で作って、表の上に置く
 //   座標：表全体の左上（行の番号の左・列の記号の上）を 0 とした px（拡大縮小をかけたもの）
 // =========================================================
 const XlGrid = (() => {
@@ -286,13 +286,14 @@ const XlGrid = (() => {
     const gd = pathOf(gf, 'graphic', 'graphicData'), uri = at(gd, 'uri') || '';
     const box = placeBox(xf);
     if (/\/chart$/.test(uri)) {
-      let title = '';
-      const id = rAttr(kid(gd, 'chart'), 'id'), rel = id && ctx.src.rels.get(id);
-      if (rel) {
-        const doc = await ctx.xml(rel.target), t = doc && pathOf(doc.documentElement, 'chart', 'title');
-        if (t) title = [...desc(t, 't')].map(x => x.textContent).join('');
+      const cp = OChart.chartPathOf(gd, ctx.src.rels);
+      try {
+        if (!cp) throw new Error('no chart');
+        box.appendChild(await OChart.render(cp, { P: { xml: ctx.xml }, theme: ctx.theme, map: ctx.map, w: xf.w, h: xf.h, host: 'xl' }));
+      } catch (e) {
+        console.warn('グラフを描けませんでした', e);
+        box.appendChild(missing('グラフ（表示できませんでした）'));
       }
-      box.appendChild(missing(`グラフ${title ? '「' + title + '」' : ''}（この画面ではまだ表示できません）`));
     } else {
       const pic = desc(gd, 'pic')[0];
       if (pic) return drawPic(pic, ctx, parent, xf);

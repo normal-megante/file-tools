@@ -115,6 +115,8 @@
 .xlhost{position:relative;height:min(72vh,900px);min-height:260px;flex:none}
 .xlhost > .xg-wrap{position:absolute;inset:0}
 .xlhost > .msg{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center}
+.xlhost > .xlchart{position:absolute;inset:0;padding:8px;background:var(--thumb-bg)}
+.xlchart > svg{display:block;width:100%;height:100%}
 .xltabs{display:flex;align-items:stretch;gap:2px;overflow-x:auto;border-top:1px solid var(--line);background:var(--thumb-bg);padding:0 4px;flex:none}
 .xltab{flex:none;border:0;border-bottom:3px solid transparent;background:transparent;padding:7px 12px 5px;font-size:13px;cursor:pointer;color:var(--text);white-space:nowrap;max-width:14em;overflow:hidden;text-overflow:ellipsis;font-family:inherit}
 .xltab:hover{background:var(--accent-soft)}
@@ -145,9 +147,9 @@
     <summary>見られるファイルと、できないこと</summary>
     <ul>
       <li><span class="k"><b>PDF</b></span><span class="c">ページを順に表示。パスワードつきも開けます。<em>文字を選んでコピーすることはできません（ページを絵として表示）。</em></span></li>
-      <li><span class="k"><b>PowerPoint</b><small>.pptx（.ppsx・.pptm も）</small></span><span class="c">スライドとノート。<em>書体はこの端末にあるもので代わりに表示するので、文字の大きさや改行の位置が元と少し違うことがあります。グラフ・アニメーション・動画は表示されません（グラフは枠と名前だけ）。</em></span></li>
-      <li><span class="k"><b>Word</b><small>.docx（.docm も）</small></span><span class="c">「ページ」は紙と同じページに分けて表示、「スマホ向け」は画面の幅で折り返して読みやすく（表は横にスクロール）。<em>書体はこの端末にあるもので代わりに表示するので、改行やページの切れ目が元と少し違うことがあります。段組みは1段・縦書きは横書きで表示。グラフ・SmartArt・EMF の図は枠だけ、コメントと変更履歴の印は出ません。</em></span></li>
-      <li><span class="k"><b>Excel</b><small>.xlsx（.xlsm も）</small></span><span class="c">シートを下で切りかえ。セルをタップすると、上に中身と数式・メモ・リンク。固定した行と列、セルの書式・表示形式（和暦も）・条件付き書式・図も Excel に合わせて表示。拡大縮小は 2 本指でも。<em>数式は計算し直さず、保存したときの結果を表示します。書体はこの端末にあるもので代わりに表示するので、文字のはみ出し方などが元と少し違うことがあります。グラフは枠だけ、マクロは動きません。隠したシートは出しません。.xlsb は開けません。</em></span></li>
+      <li><span class="k"><b>PowerPoint</b><small>.pptx（.ppsx・.pptm も）</small></span><span class="c">スライドとノート、グラフ。<em>書体はこの端末にあるもので代わりに表示するので、文字の大きさや改行の位置が元と少し違うことがあります。3D のグラフは平らに描きます。じょうご・ツリーマップなど新しい種類のグラフ、アニメーション・動画は表示されません。</em></span></li>
+      <li><span class="k"><b>Word</b><small>.docx（.docm も）</small></span><span class="c">「ページ」は紙と同じページに分けて表示、「スマホ向け」は画面の幅で折り返して読みやすく（表は横にスクロール）。<em>書体はこの端末にあるもので代わりに表示するので、改行やページの切れ目が元と少し違うことがあります。段組みは1段・縦書きは横書きで表示。3D のグラフは平らに描き、じょうご・ツリーマップなど新しい種類のグラフは出ません。SmartArt・EMF の図は枠だけ、コメントと変更履歴の印は出ません。</em></span></li>
+      <li><span class="k"><b>Excel</b><small>.xlsx（.xlsm も）</small></span><span class="c">シートを下で切りかえ。セルをタップすると、上に中身と数式・メモ・リンク。固定した行と列、セルの書式・表示形式（和暦も）・条件付き書式・図・グラフも Excel に合わせて表示。拡大縮小は 2 本指でも。<em>数式は計算し直さず、保存したときの結果を表示します。書体はこの端末にあるもので代わりに表示するので、文字のはみ出し方などが元と少し違うことがあります。3D のグラフは平らに描き、じょうご・ツリーマップなど新しい種類のグラフは出ません。マクロは動きません。隠したシートは出しません。.xlsb は開けません。</em></span></li>
       <li><span class="k"><b>画像</b><small>JPEG・PNG・WebP・GIF・BMP・SVG・AVIF</small></span><span class="c">画像をタップすると、原寸と画面に合わせた大きさを切りかえ。<em>HEIC（iPhone の写真）は、この端末が対応していないと表示できません。</em></span></li>
       <li><span class="k"><b>文章</b><small>.txt・.csv・.json・.md・.log など</small></span><span class="c">文字コード（UTF-8・シフト JIS など）は自動で見分けます。CSV は表、JSON は見やすく整えて表示。<em>とても大きなファイルは、はじめの 2 MB だけ表示します。</em></span></li>
       <li><span class="k"><b>動画・音声</b><small>MP4・WebM・MOV・MP3・M4A・WAV など</small></span><span class="c">そのまま再生。<em>この端末が再生できない形式（AVI・WMV など）は再生できません。</em></span></li>
@@ -171,6 +173,7 @@
 <script src="js/pdfview.js"></script>
 <script src="js/zip.js"></script>
 <script src="js/drawingml.js"></script>
+<script src="js/chart.js"></script>
 <script src="js/pptx.js"></script>
 <script src="js/docx.js"></script>
 <script src="js/numfmt.js"></script>
@@ -599,6 +602,12 @@ async function viewPdf(file, v) {
 }
 
 /* ---------- PowerPoint ---------- */
+// グラフの注意（js/chart.js）。グラフがあるときだけ
+function chartNote(zip) {
+  const names = zip.entries.map(e => e.name);
+  return (names.some(n => /\/charts\/chart\d+\.xml$/i.test(n)) ? '3D のグラフは平らに描きます。' : '')
+    + (names.some(n => /\/charts\/chartEx\d*\.xml$/i.test(n)) ? 'じょうご・ツリーマップなど新しい種類のグラフは出ません。' : '');
+}
 async function viewPptx(file, v, zip) {
   const deck = await Pptx.open(zip);
   v.onDispose(() => deck.dispose());
@@ -630,7 +639,7 @@ async function viewPptx(file, v, zip) {
     lab.title = '発表者用のメモ（ノート）を、スライドの下に出す';
     v.tools.appendChild(lab);
   }
-  v.note('書体はこの端末にあるもので代わりに表示しています。文字の大きさや改行の位置が元と少し違うことがあります。グラフ・アニメーション・動画は表示されません。', true);
+  v.note(`書体はこの端末にあるもので代わりに表示しています。文字の大きさや改行の位置が元と少し違うことがあります。${chartNote(zip)}アニメーション・動画は表示されません。`, true);
 }
 
 /* ---------- Word ----------
@@ -682,7 +691,7 @@ async function viewDocx(file, v, zip) {
       });
       v.stack = stack;
       pageTools(me, stack, pages.length, 'ページ');
-      v.note(`書体はこの端末にあるもので代わりに表示しています。文字の幅や改行・ページの切れ目が元と少し違うことがあります。${extraText}グラフ・SmartArt・EMF の図は枠だけです。`, true);
+      v.note(`書体はこの端末にあるもので代わりに表示しています。文字の幅や改行・ページの切れ目が元と少し違うことがあります。${extraText}${chartNote(zip)}SmartArt・EMF の図は枠だけです。`, true);
     } else {
       const host = $('#vbody'), cs = getComputedStyle(host);
       const avail = () => Math.max(200, host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 32);
@@ -698,7 +707,7 @@ async function viewDocx(file, v, zip) {
       await draw();
       if (!me.alive()) return;
       v.info(`Word・${inf.paper}・${fmtSize(file.size)}`);
-      v.note(`スマホの画面に合わせて折り返しています。ページの切れ目・ヘッダー・フッターは出ません（紙と同じ形は「ページ」で）。${extraText}`, false);
+      v.note(`スマホの画面に合わせて折り返しています。ページの切れ目・ヘッダー・フッターは出ません（紙と同じ形は「ページ」で）。${extraText}${chartNote(zip)}`, false);
       let timer = 0;
       const ro = new ResizeObserver(() => {
         clearTimeout(timer);
@@ -784,7 +793,7 @@ async function viewXlsx(file, v, zip) {
     v.tools.appendChild(fsb);
   }
   const macro = zip.entries.some(e => /^xl\/vbaProject\.bin$/i.test(e.name));
-  v.note(`数式は計算し直さず、保存したときの結果を表示しています。書体はこの端末にあるもので代わりに表示するので、文字がセルからはみ出す所などが元と少し違うことがあります。グラフは枠だけです。${macro ? 'マクロは動きません。' : ''}`, true);
+  v.note(`数式は計算し直さず、保存したときの結果を表示しています。書体はこの端末にあるもので代わりに表示するので、文字がセルからはみ出す所などが元と少し違うことがあります。${chartNote(zip)}${macro ? 'マクロは動きません。' : ''}`, true);
 
   let g = null, cur = -1, token = 0;
   v.onDispose(() => { if (g) g.dispose(); g = null; });
@@ -848,9 +857,27 @@ async function viewXlsx(file, v, zip) {
     }
     if (!v.alive() || my !== token) return;
     if (book.sheets[i].tab && tb) tb.style.borderBottomColor = book.sheets[i].tab;
+    if (sh.kind === 'chart' && sh.chart) {
+      // グラフだけのシート：画面に収まる大きさで。小さい画面（スマホ）で字が小さくなりすぎないよう、
+      // 0.75 倍より縮めるときは、グラフを小さく組み直してから縮める
+      bar.hidden = true;
+      try {
+        const fit = Math.min((host.clientWidth - 16) / sh.w, (host.clientHeight - 16) / sh.h), k = fit > 0 && fit < 0.75 ? fit / 0.75 : 1;
+        const svg = await OChart.render(sh.chart, { P: book.P, theme: book.theme, map: { bg1: 'lt1', tx1: 'dk1', bg2: 'lt2', tx2: 'dk2' }, w: sh.w * k, h: sh.h * k, host: 'xl' });
+        if (!v.alive() || my !== token) return;
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        const box = h('div', 'xlchart');
+        box.appendChild(svg);
+        host.replaceChildren(box);
+      } catch (e) {
+        console.error(e);
+        if (v.alive() && my === token) host.replaceChildren(msgBox(`グラフのシート${sh.title ? '「' + sh.title + '」' : ''}です`, 'このグラフは表示できませんでした。'));
+      }
+      return;
+    }
     if (sh.kind !== 'sheet') {
       bar.hidden = true;
-      host.replaceChildren(msgBox(sh.kind === 'chart' ? `グラフのシート${sh.title ? '「' + sh.title + '」' : ''}です` : 'このシートは表示できません', sh.kind === 'chart' ? 'グラフはまだ表示できません（このあと作ります）。' : 'ダイアログやマクロのシートです。'));
+      host.replaceChildren(msgBox(sh.kind === 'chart' ? `グラフのシート${sh.title ? '「' + sh.title + '」' : ''}です` : 'このシートは表示できません', sh.kind === 'chart' ? 'このグラフは表示できませんでした。' : 'ダイアログやマクロのシートです。'));
       return;
     }
     bar.hidden = false;

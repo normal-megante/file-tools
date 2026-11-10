@@ -10,7 +10,7 @@
 //   ・中身は ZIP に入った XML。スライド（slideN.xml）→ レイアウト → マスター → テーマ と、足りない情報
 //     （位置・文字の大きさ・色・箇条書きの記号）を順に引き継ぐ（プレースホルダー＝「タイトルを入力」の枠）
 //   ・図形は SVG、文字は HTML で、スライドの大きさのまま描く（見るときに全体を縮める）
-//   ・できないもの：グラフ（枠と名前だけ）、EMF・WMF・TIFF の図、アニメーション、影・3D などの効果
+//   ・できないもの：EMF・WMF・TIFF の図、アニメーション、影・3D などの効果。グラフは js/chart.js
 // =========================================================
 const Pptx = (() => {
   const { EMU, px, PT, parseXml, kid, kids, pathOf, at, atNum, truthy, rAttr, desc, h, SVGNS, sv, uid, resolvePath,
@@ -210,13 +210,14 @@ const Pptx = (() => {
     }
     async function drawChartBox(gd, xf, ctx, parent) {
       const box = placeBox(xf);
-      let title = '';
-      const id = rAttr(kid(gd, 'chart'), 'id'), rel = id && ctx.src.rels.get(id);
-      if (rel) {
-        const doc = await xml(rel.target), t = doc && pathOf(doc.documentElement, 'chart', 'title');
-        if (t) title = [...desc(t, 't')].map(x => x.textContent).join('');
+      const cp = OChart.chartPathOf(gd, ctx.src.rels);
+      try {
+        if (!cp) throw new Error('no chart');
+        box.appendChild(await OChart.render(cp, { P: { xml }, theme: ctx.theme, map: ctx.map, w: xf.w, h: xf.h, host: 'pp' }));
+      } catch (e) {
+        console.warn('グラフを描けませんでした', e);
+        box.appendChild(missing('グラフ（表示できませんでした）'));
       }
-      box.appendChild(missing(`グラフ${title ? '「' + title + '」' : ''}（この画面では表示できません）`));
       parent.appendChild(box);
     }
     // SmartArt：PowerPoint が一緒に保存している「描いたもの」（drawingN.xml）を図形として描く

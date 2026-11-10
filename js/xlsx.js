@@ -313,8 +313,8 @@ const Xlsx = (() => {
     if (!info || !info.path) throw new Error('シートが見つかりません');
     const P = book.P;
     if (info.kind !== 'sheet') {
-      // グラフだけのシートなど：グラフの題名だけ読む
-      let title = '';
+      // グラフだけのシートなど：グラフの場所と大きさ（ext は EMU）
+      let title = '', chart = null, w = 0, hh = 0;
       try {
         const d = await P.xml(info.path), rels = await P.rels(info.path);
         const dr = d && kid(d.documentElement, 'drawing'), rel = dr && rels.get(rAttr(dr, 'id'));
@@ -324,14 +324,19 @@ const Xlsx = (() => {
           const cr = ch && drels.get(rAttr(ch, 'id')), cd = cr && await P.xml(cr.target);
           const t = cd && pathOf(cd.documentElement, 'chart', 'title');
           if (t) title = [...t.getElementsByTagNameNS('*', 't')].map(x => x.textContent).join('');
+          if (cd) chart = cr.target;
+          let an = ch;
+          while (an && !/Anchor$/.test(an.localName)) an = an.parentNode;
+          const ext = an && kid(an, 'ext');
+          if (ext) { w = atNum(ext, 'cx', 0) / 9525; hh = atNum(ext, 'cy', 0) / 9525; }
         }
       } catch (e) { /* 題名なし */ }
-      return { kind: info.kind, name: info.name, title };
+      return { kind: info.kind, name: info.name, title, chart, w: w || 868, h: hh || 614 };
     }
     const entry = P.zip.get(info.path);
     if (!entry) throw new Error('シートが見つかりません');
     const xml = await P.zip.text(entry);
-    const sh = { kind: 'sheet', name: info.name, rows: [], merges: [], notes: new Map(), links: new Map(), cf: new Map(), anchors: [], shared: new Map() };
+    const sh = { kind: 'sheet', name: info.name, rows: [], merges: [], notes: new Map(), links: new Map(), cf: new Map(), anchors: [], shared: new Map(), maxR: -1, maxC: -1 };
 
     // セル（sheetData）は大きいので、正規表現で読む。ほかは DOM で
     const sdm = /<((?:[\w.-]+:)?)sheetData\b[^>]*?(\/?)>/.exec(xml);
